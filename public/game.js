@@ -48,7 +48,7 @@
   const PASS_SPEED = 520;
   const HIGH_PASS_DIST = 420;
   const MAX_PASS_DIST = 900;
-  const MAX_PASS_ERROR = 90; // px of sideways error on the longest imperfect pass
+  const MAX_PASS_ERROR = 50; // px of sideways error on the longest imperfect pass (inside INTERCEPT_RADIUS)
   const INTERCEPT_RADIUS = 70; // high passes are catchable only near the aim point
 
   const scoreEl = document.getElementById("score");
@@ -156,8 +156,9 @@
       aim.y += Math.sin(side) * err;
     }
     const ang = Math.atan2(aim.y - k.y, aim.x - k.x);
-    ball.vx = Math.cos(ang) * PASS_SPEED;
-    ball.vy = Math.sin(ang) * PASS_SPEED;
+    const speed = PASS_SPEED + d * 0.15; // long passes are thrown harder so they reach the full length
+    ball.vx = Math.cos(ang) * speed;
+    ball.vy = Math.sin(ang) * speed;
     ball.carrier = null;
     ball.pass = { high: d > HIGH_PASS_DIST, aimX: aim.x, aimY: aim.y };
     k.cooldown = 0.8;
@@ -357,7 +358,8 @@
     }
 
     for (const p of state.players) {
-      if (p.kind !== "keeper") continue;
+      // a keeper cannot touch the ball right after passing it (grace window)
+      if (p.kind !== "keeper" || p.cooldown > 0) continue;
       const d = dist(p, ball);
       if (d < PLAYER_R + BALL_R) {
         if (Math.random() < CATCH_CHANCE) {
