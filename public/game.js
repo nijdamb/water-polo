@@ -96,7 +96,6 @@
       stealCooldown: 0,
       tackle: null,
       waiting: false, // paused after a goal / out of bounds until the user presses Space
-      pending: null,  // { type: "goal", team } | { type: "freeBall", forTeam, spot }
     };
     state.ball.carrier = state.players.find(
       (p) => p.team === kickoffTeam && p.kind === "field"
@@ -298,55 +297,41 @@
 
   function goal(team) {
     state.score[team] += 1;
-    state.banner = team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
-    state.bannerT = 1.5;
-    // pause until the user presses Space; the conceding team kicks off
-    state.pending = { type: "goal", team };
+    const text = team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
+    // set up the kickoff right away (ball at the center, conceding team in
+    // possession), then freeze until the user presses Space
+    reset(team === "blue" ? "red" : "blue");
+    state.banner = text;
     state.waiting = true;
   }
 
-  // The ball left the pool: the opponent will take a free ball at the spot
-  // where it went out, once the user presses Space to continue.
+  // The ball left the pool: put the free ball in the hands of the opponent at
+  // the spot where it went out, then freeze until the user presses Space.
   function outOfBounds() {
     const forTeam = state.ball.lastTouch === "blue" ? "red" : "blue";
-    state.pending = {
-      type: "freeBall",
-      forTeam,
-      spot: {
-        x: clamp(state.ball.x, POOL.l + BALL_R + 6, POOL.r - BALL_R - 6),
-        y: clamp(state.ball.y, POOL.t + BALL_R + 6, POOL.b - BALL_R - 6),
-      },
+    const spot = {
+      x: clamp(state.ball.x, POOL.l + BALL_R + 6, POOL.r - BALL_R - 6),
+      y: clamp(state.ball.y, POOL.t + BALL_R + 6, POOL.b - BALL_R - 6),
     };
+    const p = state.players.find((q) => q.team === forTeam && q.kind === "field");
+    p.x = spot.x;
+    p.y = spot.y;
+    state.ball.x = spot.x;
+    state.ball.y = spot.y;
+    state.ball.vx = 0;
+    state.ball.vy = 0;
+    state.ball.pass = null;
+    state.ball.carrier = p;
+    state.ball.lastTouch = forTeam;
+    p.hold = 0;
+    state.pickupCooldown = 0.5;
     state.banner = `OUT — FREE BALL ${forTeam.toUpperCase()}`;
-    state.bannerT = 1.2;
     state.waiting = true;
   }
 
   function resumePlay() {
-    const pending = state.pending;
-    state.pending = null;
     state.waiting = false;
-    if (!pending) return;
-    if (pending.type === "goal") {
-      const text = pending.team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
-      reset(pending.team === "blue" ? "red" : "blue"); // conceding team kicks off
-      state.banner = text;
-      state.bannerT = 1.5;
-    } else {
-      const p = state.players.find((q) => q.team === pending.forTeam && q.kind === "field");
-      p.x = pending.spot.x;
-      p.y = pending.spot.y;
-      state.ball.x = pending.spot.x;
-      state.ball.y = pending.spot.y;
-      state.ball.vx = 0;
-      state.ball.vy = 0;
-      state.ball.pass = null;
-      state.ball.carrier = p;
-      state.ball.lastTouch = pending.forTeam;
-      p.hold = 0;
-      state.pickupCooldown = 0.5;
-      state.bannerT = 0.8;
-    }
+    state.bannerT = 1.2; // let the banner fade out after continuing
   }
 
   function physics(dt) {
