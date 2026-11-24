@@ -17,7 +17,8 @@ Then open http://localhost:8787 to play (`/`), worker info at `/api/info`.
 ## Controls
 
 - Move: WASD or arrow keys
-- Sprint: Shift (drains stamina; the AI follows the same stamina rules)
+- Sprint with Shift or tap Sprint on mobile. The home swimmer has a slightly
+  larger stamina reserve and recovers faster.
 - Tap Space or the mobile Shoot button for a quick shot. Hold and release for
   a stronger shot. Swim up or down to steer the yellow target.
 - You need about 0.9 seconds of contact to steal. The away defender needs

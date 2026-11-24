@@ -29,12 +29,12 @@ import { createControls } from "./controls.js";
     red: { name: "AWAY", body: "#1e3a8a", cap: "#2563eb", keeperCap: "#dc2626", accent: "#60a5fa" },
   };
 
-  // Sprint: both field players share the same stamina rules, so a well-timed
-  // sprint can shake off or catch the AI.
+  const FIELD_MOVEMENT = {
+    blue: { speed: 255, maxStamina: 110, staminaRecovery: 23 },
+    red: { speed: 210, maxStamina: 100, staminaRecovery: 20 },
+  };
   const SPRINT_MULT = 1.65;
-  const STAM_MAX = 100;
   const STAM_DRAIN = 30;
-  const STAM_REGEN = 20;
   const STAM_SPRINT_MIN = 25;
 
   const TACKLE_RADIUS = PLAYER_R * 2 + 2;
@@ -82,12 +82,13 @@ import { createControls } from "./controls.js";
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
   function makePlayer(x, y, team, kind) {
+    const movement = FIELD_MOVEMENT[team];
     return {
       x, y, team, kind,
-      speed: kind === "keeper" ? 330 : team === "blue" ? 275 : 235,
+      speed: kind === "keeper" ? 330 : movement.speed,
       cooldown: 0, // shoot cooldown
       hold: 0,     // time spent carrying the ball
-      stamina: STAM_MAX,
+      stamina: movement.maxStamina,
       sprinting: false,
       reaction: 0, // remaining reaction delay before acting on a new intent
       shotPending: false, // keeper: a shot is incoming and its reaction is armed
@@ -143,7 +144,8 @@ import { createControls } from "./controls.js";
       p.stamina = Math.max(0, p.stamina - STAM_DRAIN * dt);
     } else {
       p.sprinting = false;
-      p.stamina = Math.min(STAM_MAX, p.stamina + STAM_REGEN * dt);
+      const { maxStamina, staminaRecovery } = FIELD_MOVEMENT[p.team];
+      p.stamina = Math.min(maxStamina, p.stamina + staminaRecovery * dt);
     }
   }
 
@@ -635,7 +637,7 @@ import { createControls } from "./controls.js";
       const y = p.y - PLAYER_R - 10;
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.fillRect(x, y, w, h);
-      const ratio = p.stamina / STAM_MAX;
+      const ratio = p.stamina / FIELD_MOVEMENT[p.team].maxStamina;
       ctx.fillStyle = p.sprinting ? "#fef08a" : ratio > 0.35 ? "#4ade80" : "#f87171";
       ctx.fillRect(x, y, w * ratio, h);
     }
