@@ -12,6 +12,14 @@
   const BALL_R = 9;
   const MATCH_SECONDS = 90;
 
+  // Sprint: both field players share the same stamina rules, so a well-timed
+  // sprint can shake off or catch the AI.
+  const SPRINT_MULT = 1.65;
+  const STAM_MAX = 100;
+  const STAM_DRAIN = 30;
+  const STAM_REGEN = 20;
+  const STAM_SPRINT_MIN = 25;
+
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
   const keys = new Set();
@@ -23,9 +31,11 @@
   function makePlayer(x, y, team, kind) {
     return {
       x, y, team, kind,
-      speed: kind === "keeper" ? 330 : team === "blue" ? 275 : 240,
+      speed: kind === "keeper" ? 330 : team === "blue" ? 275 : 235,
       cooldown: 0, // shoot cooldown
       hold: 0,     // time spent carrying the ball
+      stamina: STAM_MAX,
+      sprinting: false,
     };
   }
 
@@ -61,6 +71,27 @@
     p.y = clamp(p.y + (dy / d) * step, PLAYER_R, H - PLAYER_R);
   }
 
+  function updateStamina(p, wantsSprint, dt) {
+    if (p.kind !== "field") {
+      p.sprinting = false;
+      return;
+    }
+    // hysteresis: sprint can start above STAM_SPRINT_MIN, keeps going until empty
+    if (wantsSprint && (p.sprinting ? p.stamina > 0 : p.stamina >= STAM_SPRINT_MIN)) {
+      p.sprinting = true;
+      p.stamina = Math.max(0, p.stamina - STAM_DRAIN * dt);
+    } else {
+      p.sprinting = false;
+      p.stamina = Math.min(STAM_MAX, p.stamina + STAM_REGEN * dt);
+    }
+  }
+
+  function moveScale(p) {
+    let scale = state.ball.carrier === p ? 0.9 : 1;
+    if (p.sprinting) scale *= SPRINT_MULT;
+    return scale;
+  }
+
   function shoot(p) {
     const ball = state.ball;
     if (ball.carrier !== p || p.cooldown > 0) return;
@@ -82,11 +113,9 @@
     if (keys.has("arrowright") || keys.has("d")) dx += 1;
     if (keys.has("arrowup") || keys.has("w")) dy -= 1;
     if (keys.has("arrowdown") || keys.has("s")) dy += 1;
-    if (dx || dy) {
-      const d = Math.hypot(dx, dy);
-      const speed = state.ball.carrier === p ? 0.9 : 1;
-      moveToward(p, p.x + dx, p.y + dy, dt, speed);
-    }
+    const moving = dx !== 0 || dy !== 0;
+    updateStamina(p, moving && keys.has("shift"), dt);
+    if (moving) moveToward(p, p.x + dx, p.y + dy, dt, moveScale(p));
   }
 
   function moveKeeper(k, dt) {
@@ -99,21 +128,26 @@
     const ball = state.ball;
     let tx;
     let ty;
+    let wantsSprint = false;
     if (ball.carrier === p) {
       p.hold += dt;
       // dribble toward the player's goal, then shoot
       tx = 40;
       ty = H / 2 + Math.sin(state.timeLeft * 3) * 70;
+      wantsSprint = p.x > W * 0.45; // sprint the run-in to the goal
       if (p.x < W * 0.5 || p.hold > 1.4) shoot(p);
     } else if (!ball.carrier) {
       tx = ball.x;
       ty = ball.y;
+      wantsSprint = dist(p, ball) > 110; // sprint only on long chases
     } else {
       // pressure the carrier to steal the ball
       tx = ball.carrier.x;
       ty = ball.carrier.y;
+      wantsSprint = dist(p, ball.carrier) > 90;
     }
-    moveToward(p, tx, ty, dt);
+    updateStamina(p, wantsSprint, dt);
+    moveToward(p, tx, ty, dt, moveScale(p));
   }
 
   function separate(a, b) {
@@ -308,6 +342,18 @@
     ctx.arc(p.x, p.y, PLAYER_R * 0.55, 0, Math.PI * 2);
     ctx.fillStyle = p.kind === "keeper" ? "#facc15" : p.team === "blue" ? "#1d4ed8" : "#b91c1c";
     ctx.fill();
+
+    if (p.kind === "field") {
+      const w = 30;
+      const h = 4;
+      const x = p.x - w / 2;
+      const y = p.y - PLAYER_R - 10;
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(x, y, w, h);
+      const ratio = p.stamina / STAM_MAX;
+      ctx.fillStyle = p.sprinting ? "#fef08a" : ratio > 0.35 ? "#4ade80" : "#f87171";
+      ctx.fillRect(x, y, w * ratio, h);
+    }
   }
 
   function drawBall() {
