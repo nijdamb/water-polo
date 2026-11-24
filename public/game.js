@@ -55,6 +55,7 @@ import { createControls } from "./controls.js";
   const GOALIE_REACTION_MIN = 0.2;
   const GOALIE_REACTION_MAX = 0.5;
   const KEEPER_REACTION_SPEED = 320;
+  const AWAY_KEEPER_READY_RANGE = 14;
 
   // Keeper catches and passes: a blocked shot is either parried back into the
   // field or caught. A caught ball is passed to the team's field player. Long
@@ -63,9 +64,12 @@ import { createControls } from "./controls.js";
   const CATCH_CHANCE = 0.45;
   const PERFECT_PASS_CHANCE = 0.25;
   const PASS_SPEED = 520;
+  const PASS_DRAG = 0.995;
+  const PASS_DECAY_RATE = -60 * Math.log(PASS_DRAG);
   const HIGH_PASS_DIST = 420;
   const MAX_PASS_DIST = 900;
   const MAX_PASS_ERROR = 50; // px of sideways error on the longest imperfect pass (inside INTERCEPT_RADIUS)
+  const MAX_HOME_HIGH_PASS_ERROR = 18;
   const INTERCEPT_RADIUS = 70; // high passes are catchable only near the aim point
 
   const scoreEl = document.getElementById("score");
@@ -149,11 +153,10 @@ import { createControls } from "./controls.js";
   }
 
   function shotTargetY() {
-    const [human, , , keeper] = state.players;
-    if (keeper.y > H / 2 || (keeper.y === H / 2 && human.y <= H / 2)) {
-      return GOAL_TOP + SHOT_TARGET_INSET;
-    }
-    return GOAL_BOT - SHOT_TARGET_INSET;
+    const { y } = state.players[0];
+    const poolSpan = POOL.b - POOL.t - PLAYER_R * 2;
+    const position = clamp((y - POOL.t - PLAYER_R) / poolSpan, 0, 1);
+    return GOAL_TOP + SHOT_TARGET_INSET + position * (GOAL_H - SHOT_TARGET_INSET * 2);
   }
 
   function shoot(p, angle, speed) {
@@ -174,37 +177,66 @@ import { createControls } from "./controls.js";
     const ball = state.ball;
     if (ball.carrier !== k || k.cooldown > 0 || !target) return;
     const d = dist(k, target);
-    const aim = { x: target.x, y: target.y };
+    const high = d > HIGH_PASS_DIST;
+    const leadSwimmer = high && k.team === "blue";
+    const speed = PASS_SPEED + d * 0.15;
+    const aim = leadSwimmer ? leadPass(k, target, speed) : { x: target.x, y: target.y };
     // every pass has a chance to be perfectly accurate; otherwise the sideways
     // error grows with distance
     if (Math.random() >= PERFECT_PASS_CHANCE) {
-      const err = (Math.random() - 0.5) * 2 * Math.min(d / MAX_PASS_DIST, 1) * MAX_PASS_ERROR;
-      const side = Math.atan2(target.y - k.y, target.x - k.x) + Math.PI / 2;
+      const maxError = leadSwimmer ? MAX_HOME_HIGH_PASS_ERROR : MAX_PASS_ERROR;
+      const err = (Math.random() - 0.5) * 2 * Math.min(d / MAX_PASS_DIST, 1) * maxError;
+      const side = Math.atan2(aim.y - k.y, aim.x - k.x) + Math.PI / 2;
       aim.x += Math.cos(side) * err;
       aim.y += Math.sin(side) * err;
     }
+    if (leadSwimmer) {
+      aim.x = clamp(aim.x, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+      aim.y = clamp(aim.y, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
+    }
     const ang = Math.atan2(aim.y - k.y, aim.x - k.x);
-    const speed = PASS_SPEED + d * 0.15; // long passes are thrown harder so they reach the full length
     ball.vx = Math.cos(ang) * speed;
     ball.vy = Math.sin(ang) * speed;
     ball.carrier = null;
     ball.lastTouch = k.team;
-    ball.pass = { high: d > HIGH_PASS_DIST, aimX: aim.x, aimY: aim.y };
+    ball.pass = { airborne: high, aimX: aim.x, aimY: aim.y };
     k.cooldown = 0.8;
     k.hold = 0;
-    state.pickupCooldown = ball.pass.high ? 0.1 : 0.3;
+    state.pickupCooldown = high ? 0.1 : 0.3;
+  }
+
+  function leadPass(keeper, swimmer, speed) {
+    const velocity = swimVelocity(swimmer, controls.movement());
+    if (velocity.x === 0 && velocity.y === 0) return { x: swimmer.x, y: swimmer.y };
+
+    let earliest = 0;
+    let latest = 3; // A high pass covers the pool's diagonal in under three seconds.
+    let x, y;
+    for (let i = 0; i < 10; i++) {
+      const time = (earliest + latest) / 2;
+      x = clamp(swimmer.x + velocity.x * time, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+      y = clamp(swimmer.y + velocity.y * time, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
+      const travel = speed * (1 - Math.exp(-PASS_DECAY_RATE * time)) / PASS_DECAY_RATE;
+      if (travel < Math.hypot(x - keeper.x, y - keeper.y)) earliest = time;
+      else latest = time;
+    }
+    return { x, y };
+  }
+
+  function swimVelocity(p, { x, y }) {
+    const directionLength = Math.hypot(x, y);
+    const scale = directionLength > 0 ? p.speed * moveScale(p) / directionLength : 0;
+    return { x: x * scale, y: y * scale };
   }
 
   function moveHuman(p, dt) {
-    const { x: dx, y: dy, sprint } = controls.movement();
-    const moving = dx !== 0 || dy !== 0;
-    updateStamina(p, moving && sprint, dt);
-    if (moving) {
-      const d = Math.hypot(dx, dy);
-      const step = p.speed * moveScale(p) * dt;
-      p.x = clamp(p.x + (dx / d) * step, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
-      p.y = clamp(p.y + (dy / d) * step, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
-    }
+    const movement = controls.movement();
+    const moving = movement.x !== 0 || movement.y !== 0;
+    updateStamina(p, moving && movement.sprint, dt);
+    if (!moving) return;
+    const velocity = swimVelocity(p, movement);
+    p.x = clamp(p.x + velocity.x * dt, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+    p.y = clamp(p.y + velocity.y * dt, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
   }
 
   function moveKeeper(k, dt) {
@@ -240,7 +272,10 @@ import { createControls } from "./controls.js";
     }
     k.shotPending = false;
     k.reaction = 0;
-    const targetY = clamp(ball.y, GOAL_TOP + 26, GOAL_BOT - 26);
+    const guardingSwimmer = k.team === "red" && ball.carrier === state.players[0];
+    const targetY = guardingSwimmer
+      ? clamp(ball.y, H / 2 - AWAY_KEEPER_READY_RANGE, H / 2 + AWAY_KEEPER_READY_RANGE)
+      : clamp(ball.y, GOAL_TOP + 26, GOAL_BOT - 26);
     moveToward(k, x, targetY, dt);
   }
 
@@ -265,8 +300,10 @@ import { createControls } from "./controls.js";
         shoot(p, angle, 560);
       }
     } else if (!ball.carrier) {
-      if (ball.pass) {
-        // go to the landing point to receive or intercept the pass
+      if (ball.pass && ball.lastTouch !== p.team) {
+        tx = ball.pass.airborne ? p.x : ball.x;
+        ty = ball.pass.airborne ? p.y : ball.y;
+      } else if (ball.pass) {
         tx = ball.pass.aimX;
         ty = ball.pass.aimY;
       } else {
@@ -396,7 +433,7 @@ import { createControls } from "./controls.js";
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
     // a passed ball flies farther than a rolling one
-    const f = Math.pow(ball.pass ? 0.995 : 0.985, dt * 60);
+    const f = Math.pow(ball.pass ? PASS_DRAG : 0.985, dt * 60);
     ball.vx *= f;
     ball.vy *= f;
     // keep an out-of-bounds ball visible as it rolls onto the deck
@@ -420,19 +457,24 @@ import { createControls } from "./controls.js";
       return;
     }
 
-    if (!state.waiting) {
+    const pass = ball.pass;
+    if (pass?.airborne && Math.hypot(ball.x - pass.aimX, ball.y - pass.aimY) <= INTERCEPT_RADIUS) {
+      pass.airborne = false;
+    }
+
+    if (!state.waiting && !pass?.airborne) {
       for (const p of state.players) {
         // a keeper cannot touch the ball right after passing it (grace window)
         if (p.kind !== "keeper" || p.cooldown > 0) continue;
         const d = dist(p, ball);
         if (d < PLAYER_R + BALL_R) {
           ball.lastTouch = p.team;
+          ball.pass = null;
           if (Math.random() < CATCH_CHANCE) {
             // caught: the keeper holds the ball and will pass it out
             ball.carrier = p;
             ball.vx = 0;
             ball.vy = 0;
-            ball.pass = null;
             p.reaction = REACTION_MIN + Math.random() * (REACTION_MAX - REACTION_MIN);
             p.hold = 0;
             state.pickupCooldown = 0.8;
@@ -452,14 +494,6 @@ import { createControls } from "./controls.js";
         for (const p of state.players) {
           if (p.kind !== "field") continue;
           if (dist(p, ball) < PLAYER_R + BALL_R + 2) {
-            // a high pass can only be caught close to its landing point
-            if (
-              ball.pass &&
-              ball.pass.high &&
-              Math.hypot(ball.x - ball.pass.aimX, ball.y - ball.pass.aimY) > INTERCEPT_RADIUS
-            ) {
-              continue;
-            }
             ball.carrier = p;
             ball.lastTouch = p.team;
             p.hold = 0;
