@@ -5,8 +5,12 @@
   const W = canvas.width; // 960
   const H = canvas.height; // 540
 
+  // The pool is inset in a deck: the edges are low and at water level, so the
+  // ball can leave the field instead of bouncing off a wall.
+  const DECK = 28;
+  const POOL = { l: DECK, t: DECK, r: W - DECK, b: H - DECK };
   const GOAL_H = 150;
-  const GOAL_TOP = (H - GOAL_H) / 2;
+  const GOAL_TOP = POOL.t + (POOL.b - POOL.t - GOAL_H) / 2;
   const GOAL_BOT = GOAL_TOP + GOAL_H;
   const PLAYER_R = 16;
   const BALL_R = 9;
@@ -76,7 +80,7 @@
 
   function reset(kickoffTeam) {
     state = {
-      ball: { x: W / 2, y: H / 2, vx: 0, vy: 0, carrier: null, pass: null },
+      ball: { x: W / 2, y: H / 2, vx: 0, vy: 0, carrier: null, pass: null, lastTouch: null },
       players: [
         makePlayer(W * 0.3, H / 2, "blue", "field"),   // you
         makePlayer(18, H / 2, "blue", "keeper"),
@@ -91,10 +95,12 @@
       pickupCooldown: 0,
       stealCooldown: 0,
       tackle: null,
+      freeBall: null,
     };
     state.ball.carrier = state.players.find(
       (p) => p.team === kickoffTeam && p.kind === "field"
     );
+    state.ball.lastTouch = kickoffTeam;
   }
 
   function moveToward(p, tx, ty, dt, speedScale = 1) {
@@ -103,8 +109,8 @@
     const d = Math.hypot(dx, dy);
     if (d < 1) return;
     const step = Math.min(d, p.speed * speedScale * dt);
-    p.x = clamp(p.x + (dx / d) * step, PLAYER_R, W - PLAYER_R);
-    p.y = clamp(p.y + (dy / d) * step, PLAYER_R, H - PLAYER_R);
+    p.x = clamp(p.x + (dx / d) * step, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+    p.y = clamp(p.y + (dy / d) * step, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
   }
 
   function updateStamina(p, wantsSprint, dt) {
@@ -137,6 +143,7 @@
     ball.vx = Math.cos(angle) * power;
     ball.vy = Math.sin(angle) * power;
     ball.carrier = null;
+    ball.lastTouch = p.team;
     p.cooldown = 0.5;
     p.hold = 0;
     state.pickupCooldown = 0.35;
@@ -160,6 +167,7 @@
     ball.vx = Math.cos(ang) * speed;
     ball.vy = Math.sin(ang) * speed;
     ball.carrier = null;
+    ball.lastTouch = k.team;
     ball.pass = { high: d > HIGH_PASS_DIST, aimX: aim.x, aimY: aim.y };
     k.cooldown = 0.8;
     k.hold = 0;
@@ -178,8 +186,8 @@
     if (moving) {
       const d = Math.hypot(dx, dy);
       const step = p.speed * moveScale(p) * dt;
-      p.x = clamp(p.x + (dx / d) * step, PLAYER_R, W - PLAYER_R);
-      p.y = clamp(p.y + (dy / d) * step, PLAYER_R, H - PLAYER_R);
+      p.x = clamp(p.x + (dx / d) * step, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+      p.y = clamp(p.y + (dy / d) * step, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
     }
   }
 
@@ -193,7 +201,7 @@
       }
       return;
     }
-    const x = k.team === "blue" ? 18 : W - 18;
+    const x = k.team === "blue" ? POOL.l + PLAYER_R : POOL.r - PLAYER_R;
     const incoming = k.team === "blue" ? ball.vx < 0 : ball.vx > 0;
     const speed = Math.hypot(ball.vx, ball.vy);
     if (!ball.carrier && incoming && speed > SHOT_SPEED) {
@@ -280,10 +288,10 @@
       const push = (min - d) / 2;
       const nx = (b.x - a.x) / d;
       const ny = (b.y - a.y) / d;
-      a.x = clamp(a.x - nx * push, PLAYER_R, W - PLAYER_R);
-      a.y = clamp(a.y - ny * push, PLAYER_R, H - PLAYER_R);
-      b.x = clamp(b.x + nx * push, PLAYER_R, W - PLAYER_R);
-      b.y = clamp(b.y + ny * push, PLAYER_R, H - PLAYER_R);
+      a.x = clamp(a.x - nx * push, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+      a.y = clamp(a.y - ny * push, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
+      b.x = clamp(b.x + nx * push, POOL.l + PLAYER_R, POOL.r - PLAYER_R);
+      b.y = clamp(b.y + ny * push, POOL.t + PLAYER_R, POOL.b - PLAYER_R);
     }
   }
 
@@ -295,6 +303,22 @@
     reset(conceding);
     state.banner = team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
     state.bannerT = 1.5;
+  }
+
+  // The ball left the pool: after a short beat the opponent takes a free ball
+  // at the spot where it went out.
+  function outOfBounds() {
+    const forTeam = state.ball.lastTouch === "blue" ? "red" : "blue";
+    state.freeBall = {
+      forTeam,
+      spot: {
+        x: clamp(state.ball.x, POOL.l + BALL_R + 6, POOL.r - BALL_R - 6),
+        y: clamp(state.ball.y, POOL.t + BALL_R + 6, POOL.b - BALL_R - 6),
+      },
+      t: 0.9,
+    };
+    state.banner = `OUT — FREE BALL ${forTeam.toUpperCase()}`;
+    state.bannerT = 1.2;
   }
 
   function physics(dt) {
@@ -321,6 +345,7 @@
         if (state.tackle.progress >= TACKLE_DURATION) {
           ball.carrier = enemy;
           enemy.hold = 0;
+          ball.lastTouch = enemy.team;
           state.stealCooldown = 1.2;
           state.tackle = null;
         }
@@ -337,68 +362,70 @@
     const f = Math.pow(ball.pass ? 0.995 : 0.985, dt * 60);
     ball.vx *= f;
     ball.vy *= f;
+    // keep an out-of-bounds ball visible as it rolls onto the deck
+    ball.x = clamp(ball.x, POOL.l - DECK - 12, POOL.r + DECK + 12);
+    ball.y = clamp(ball.y, POOL.t - DECK - 12, POOL.b + DECK + 12);
 
-    if (ball.y - BALL_R < 0) {
-      ball.y = BALL_R;
-      ball.vy = Math.abs(ball.vy);
-    }
-    if (ball.y + BALL_R > H) {
-      ball.y = H - BALL_R;
-      ball.vy = -Math.abs(ball.vy);
-    }
-    if (ball.x - BALL_R < 0) {
-      if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("red");
-      ball.x = BALL_R;
-      ball.vx = Math.abs(ball.vx);
-    }
-    if (ball.x + BALL_R > W) {
-      if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("blue");
-      ball.x = W - BALL_R;
-      ball.vx = -Math.abs(ball.vx);
-    }
-
-    for (const p of state.players) {
-      // a keeper cannot touch the ball right after passing it (grace window)
-      if (p.kind !== "keeper" || p.cooldown > 0) continue;
-      const d = dist(p, ball);
-      if (d < PLAYER_R + BALL_R) {
-        if (Math.random() < CATCH_CHANCE) {
-          // caught: the keeper holds the ball and will pass it out
-          ball.carrier = p;
-          ball.vx = 0;
-          ball.vy = 0;
-          ball.pass = null;
-          p.reaction = REACTION_MIN + Math.random() * (REACTION_MAX - REACTION_MIN);
-          p.hold = 0;
-          state.pickupCooldown = 0.8;
-          continue;
-        }
-        const nx = (ball.x - p.x) / (d || 1);
-        const ny = (ball.y - p.y) / (d || 1);
-        const speed = Math.max(Math.hypot(ball.vx, ball.vy) * 0.9, 180);
-        ball.vx = nx * speed;
-        ball.vy = ny * speed;
-        ball.x = p.x + nx * (PLAYER_R + BALL_R + 1);
-        ball.y = p.y + ny * (PLAYER_R + BALL_R + 1);
+    // Pool edges are low: no wall bounces. Goals only count inside the mouth;
+    // anywhere else the ball is out of bounds and the opponent gets a free ball.
+    if (!state.freeBall) {
+      if (ball.x - BALL_R < POOL.l) {
+        if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("red");
+        outOfBounds();
+      } else if (ball.x + BALL_R > POOL.r) {
+        if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("blue");
+        outOfBounds();
+      } else if (ball.y - BALL_R < POOL.t || ball.y + BALL_R > POOL.b) {
+        outOfBounds();
       }
     }
 
-    if (state.pickupCooldown <= 0) {
+    if (!state.freeBall) {
       for (const p of state.players) {
-        if (p.kind !== "field") continue;
-        if (dist(p, ball) < PLAYER_R + BALL_R + 2) {
-          // a high pass can only be caught close to its landing point
-          if (
-            ball.pass &&
-            ball.pass.high &&
-            Math.hypot(ball.x - ball.pass.aimX, ball.y - ball.pass.aimY) > INTERCEPT_RADIUS
-          ) {
+        // a keeper cannot touch the ball right after passing it (grace window)
+        if (p.kind !== "keeper" || p.cooldown > 0) continue;
+        const d = dist(p, ball);
+        if (d < PLAYER_R + BALL_R) {
+          ball.lastTouch = p.team;
+          if (Math.random() < CATCH_CHANCE) {
+            // caught: the keeper holds the ball and will pass it out
+            ball.carrier = p;
+            ball.vx = 0;
+            ball.vy = 0;
+            ball.pass = null;
+            p.reaction = REACTION_MIN + Math.random() * (REACTION_MAX - REACTION_MIN);
+            p.hold = 0;
+            state.pickupCooldown = 0.8;
             continue;
           }
-          ball.carrier = p;
-          p.hold = 0;
-          ball.pass = null;
-          break;
+          const nx = (ball.x - p.x) / (d || 1);
+          const ny = (ball.y - p.y) / (d || 1);
+          const speed = Math.max(Math.hypot(ball.vx, ball.vy) * 0.9, 180);
+          ball.vx = nx * speed;
+          ball.vy = ny * speed;
+          ball.x = p.x + nx * (PLAYER_R + BALL_R + 1);
+          ball.y = p.y + ny * (PLAYER_R + BALL_R + 1);
+        }
+      }
+
+      if (state.pickupCooldown <= 0) {
+        for (const p of state.players) {
+          if (p.kind !== "field") continue;
+          if (dist(p, ball) < PLAYER_R + BALL_R + 2) {
+            // a high pass can only be caught close to its landing point
+            if (
+              ball.pass &&
+              ball.pass.high &&
+              Math.hypot(ball.x - ball.pass.aimX, ball.y - ball.pass.aimY) > INTERCEPT_RADIUS
+            ) {
+              continue;
+            }
+            ball.carrier = p;
+            ball.lastTouch = p.team;
+            p.hold = 0;
+            ball.pass = null;
+            break;
+          }
         }
       }
     }
@@ -418,6 +445,25 @@
       state.bannerT -= dt;
       if (state.bannerT <= 0) state.banner = null;
     }
+    if (state.freeBall) {
+      state.freeBall.t -= dt;
+      if (state.freeBall.t <= 0) {
+        const fb = state.freeBall;
+        state.freeBall = null;
+        const p = state.players.find((q) => q.team === fb.forTeam && q.kind === "field");
+        p.x = fb.spot.x;
+        p.y = fb.spot.y;
+        state.ball.x = fb.spot.x;
+        state.ball.y = fb.spot.y;
+        state.ball.vx = 0;
+        state.ball.vy = 0;
+        state.ball.pass = null;
+        state.ball.carrier = p;
+        state.ball.lastTouch = fb.forTeam;
+        p.hold = 0;
+        state.pickupCooldown = 0.5;
+      }
+    }
 
     const [you, keeperBlue, ai, keeperRed] = state.players;
     moveHuman(you, dt);
@@ -436,37 +482,41 @@
   }
 
   function drawPool() {
-    const g = ctx.createLinearGradient(0, 0, 0, H);
+    // deck around the pool — the ball can roll out here
+    ctx.fillStyle = "#0a1626";
+    ctx.fillRect(0, 0, W, H);
+
+    const g = ctx.createLinearGradient(0, POOL.t, 0, POOL.b);
     g.addColorStop(0, "#0e4d80");
     g.addColorStop(1, "#093a63");
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(POOL.l, POOL.t, POOL.r - POOL.l, POOL.b - POOL.t);
 
     ctx.strokeStyle = "rgba(255,255,255,0.14)";
     ctx.lineWidth = 2;
     ctx.setLineDash([14, 12]);
-    for (let y = 60; y < H; y += 60) {
+    for (let y = POOL.t + 60; y < POOL.b; y += 60) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
+      ctx.moveTo(POOL.l, y);
+      ctx.lineTo(POOL.r, y);
       ctx.stroke();
     }
     ctx.beginPath();
-    ctx.moveTo(W / 2, 0);
-    ctx.lineTo(W / 2, H);
+    ctx.moveTo(W / 2, POOL.t);
+    ctx.lineTo(W / 2, POOL.b);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // goal mouths with nets
-    for (const side of [0, W]) {
+    // goal mouths with nets on the pool edges
+    for (const side of [POOL.l, POOL.r]) {
       ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fillRect(side === 0 ? 0 : W - 10, GOAL_TOP, 10, GOAL_H);
+      ctx.fillRect(side === POOL.l ? side : side - 10, GOAL_TOP, 10, GOAL_H);
       ctx.strokeStyle = "rgba(255,255,255,0.55)";
       ctx.lineWidth = 1;
       for (let y = GOAL_TOP + 12; y < GOAL_BOT; y += 12) {
         ctx.beginPath();
-        ctx.moveTo(side === 0 ? 0 : W - 10, y);
-        ctx.lineTo(side === 0 ? 10 : W, y);
+        ctx.moveTo(side === POOL.l ? side : side - 10, y);
+        ctx.lineTo(side === POOL.l ? side + 10 : side, y);
         ctx.stroke();
       }
       ctx.strokeStyle = "#fde047";
@@ -477,9 +527,10 @@
       ctx.stroke();
     }
 
-    ctx.strokeStyle = "#1e3a5f";
-    ctx.lineWidth = 6;
-    ctx.strokeRect(0, 0, W, H);
+    // low pool coping — no wall to bounce on
+    ctx.strokeStyle = "#3b6ea5";
+    ctx.lineWidth = 5;
+    ctx.strokeRect(POOL.l, POOL.t, POOL.r - POOL.l, POOL.b - POOL.t);
   }
 
   function drawPlayer(p) {
