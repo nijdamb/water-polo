@@ -564,7 +564,8 @@
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-    ctx.fillStyle = style.body;
+    // keepers have a red circle; field players wear the team colour
+    ctx.fillStyle = p.kind === "keeper" ? style.keeperCap : style.body;
     ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = p.team === "blue" ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.5)";
