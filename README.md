@@ -20,7 +20,8 @@ Then open http://localhost:8787 to play (`/`), worker info at `/api/info`.
 - Sprint: Shift (drains stamina; the AI follows the same stamina rules)
 - Tap Space or the mobile Shoot button for a quick shot. Hold and release for
   a stronger shot. Swim up or down to steer the yellow target.
-- Steals need ~1s of sustained contact; sprint away to cancel a tackle
+- You need about 0.9 seconds of contact to steal. The away defender needs
+  about 1.5 seconds. Break contact to cancel a tackle.
 - Goalies catch some blocked shots and pass to their field player. Press Space
   or Pass when your goalie has the ball. Your goalie leads you on long passes.
   High passes become catchable near their landing point.

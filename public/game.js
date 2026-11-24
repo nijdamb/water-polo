@@ -37,11 +37,12 @@ import { createControls } from "./controls.js";
   const STAM_REGEN = 20;
   const STAM_SPRINT_MIN = 25;
 
-  // A steal needs sustained contact, not a single touch: the tackler must stay
-  // within TACKLE_RADIUS for TACKLE_DURATION seconds. Breaking contact resets
-  // the tackle, so a sprint always leaves room to escape.
   const TACKLE_RADIUS = PLAYER_R * 2 + 2;
-  const TACKLE_DURATION = 0.9;
+  const HOME_TACKLE_DURATION = 0.9;
+  const AWAY_TACKLE_DURATION = 1.55;
+  const AWAY_PRESS_LINE = W * 0.60;
+  const AWAY_GUARD_X = W * 0.73;
+  const AWAY_DEFENSIVE_PACE = 0.82;
 
   // The AI does not react instantly: when its intent changes (new ball
   // carrier, or a new sprint) it waits a randomized reaction time first.
@@ -289,6 +290,7 @@ import { createControls } from "./controls.js";
     let tx;
     let ty;
     let wantsSprint = false;
+    let pace = 1;
     if (ball.carrier === p) {
       p.hold += dt;
       // dribble toward the player's goal, then shoot
@@ -322,10 +324,11 @@ import { createControls } from "./controls.js";
       ty = clamp(ball.y, GOAL_TOP + 40, GOAL_BOT - 40);
       wantsSprint = dist(p, { x: tx, y: ty }) > 150;
     } else {
-      // pressure the carrier to steal the ball
-      tx = ball.carrier.x;
-      ty = ball.carrier.y;
-      wantsSprint = dist(p, ball.carrier) > 40; // sprint to keep contact while pressing
+      const carrier = ball.carrier;
+      const pressing = carrier.x >= AWAY_PRESS_LINE;
+      tx = pressing ? carrier.x : AWAY_GUARD_X;
+      ty = pressing ? carrier.y : H / 2 + (carrier.y - H / 2) * 0.35;
+      pace = AWAY_DEFENSIVE_PACE;
     }
     // Starting to sprint also costs a fresh, randomized reaction delay.
     if (wantsSprint && !p.sprintIntent) {
@@ -334,7 +337,7 @@ import { createControls } from "./controls.js";
     p.sprintIntent = wantsSprint;
     p.reaction = Math.max(0, p.reaction - dt);
     updateStamina(p, wantsSprint && p.reaction <= 0, dt);
-    moveToward(p, tx, ty, dt, moveScale(p));
+    moveToward(p, tx, ty, dt, moveScale(p) * pace);
   }
 
   function separate(a, b) {
@@ -413,10 +416,11 @@ import { createControls } from "./controls.js";
       const d = enemy ? dist(enemy, ball.carrier) : Infinity;
       if (enemy && d < TACKLE_RADIUS && state.stealCooldown <= 0) {
         if (!state.tackle || state.tackle.tackler !== enemy || state.tackle.carrier !== ball.carrier) {
-          state.tackle = { carrier: ball.carrier, tackler: enemy, progress: 0 };
+          const duration = enemy.team === "blue" ? HOME_TACKLE_DURATION : AWAY_TACKLE_DURATION;
+          state.tackle = { carrier: ball.carrier, tackler: enemy, duration, progress: 0 };
         }
         state.tackle.progress += dt;
-        if (state.tackle.progress >= TACKLE_DURATION) {
+        if (state.tackle.progress >= state.tackle.duration) {
           ball.carrier = enemy;
           enemy.hold = 0;
           ball.lastTouch = enemy.team;
@@ -711,7 +715,7 @@ import { createControls } from "./controls.js";
       t.carrier.y,
       PLAYER_R + 7,
       -Math.PI / 2,
-      -Math.PI / 2 + Math.min(t.progress / TACKLE_DURATION, 1) * Math.PI * 2
+      -Math.PI / 2 + Math.min(t.progress / t.duration, 1) * Math.PI * 2
     );
     ctx.strokeStyle = "#f87171";
     ctx.lineWidth = 4;
