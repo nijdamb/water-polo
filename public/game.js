@@ -504,7 +504,7 @@
   }
 
   function drawPool() {
-    // deck around the pool — the ball can roll out here
+    // deck around the pool - the ball can roll out here
     ctx.fillStyle = "#0a1626";
     ctx.fillRect(0, 0, W, H);
 
@@ -549,7 +549,7 @@
       ctx.stroke();
     }
 
-    // low pool coping — no wall to bounce on
+    // low pool coping - no wall to bounce on
     ctx.strokeStyle = "#3b6ea5";
     ctx.lineWidth = 5;
     ctx.strokeRect(POOL.l, POOL.t, POOL.r - POOL.l, POOL.b - POOL.t);
