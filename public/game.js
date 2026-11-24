@@ -578,7 +578,7 @@
     ctx.fill();
     if (p.kind === "keeper") {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, PLAYER_R * 0.22, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, PLAYER_R * 0.32, 0, Math.PI * 2);
       ctx.fillStyle = style.accent;
       ctx.fill();
     }
