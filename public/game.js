@@ -95,7 +95,8 @@
       pickupCooldown: 0,
       stealCooldown: 0,
       tackle: null,
-      freeBall: null,
+      waiting: false, // paused after a goal / out of bounds until the user presses Space
+      pending: null,  // { type: "goal", team } | { type: "freeBall", forTeam, spot }
     };
     state.ball.carrier = state.players.find(
       (p) => p.team === kickoffTeam && p.kind === "field"
@@ -299,26 +300,53 @@
     state.score[team] += 1;
     state.banner = team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
     state.bannerT = 1.5;
-    const conceding = team === "blue" ? "red" : "blue";
-    reset(conceding);
-    state.banner = team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
-    state.bannerT = 1.5;
+    // pause until the user presses Space; the conceding team kicks off
+    state.pending = { type: "goal", team };
+    state.waiting = true;
   }
 
-  // The ball left the pool: after a short beat the opponent takes a free ball
-  // at the spot where it went out.
+  // The ball left the pool: the opponent will take a free ball at the spot
+  // where it went out, once the user presses Space to continue.
   function outOfBounds() {
     const forTeam = state.ball.lastTouch === "blue" ? "red" : "blue";
-    state.freeBall = {
+    state.pending = {
+      type: "freeBall",
       forTeam,
       spot: {
         x: clamp(state.ball.x, POOL.l + BALL_R + 6, POOL.r - BALL_R - 6),
         y: clamp(state.ball.y, POOL.t + BALL_R + 6, POOL.b - BALL_R - 6),
       },
-      t: 0.9,
     };
     state.banner = `OUT — FREE BALL ${forTeam.toUpperCase()}`;
     state.bannerT = 1.2;
+    state.waiting = true;
+  }
+
+  function resumePlay() {
+    const pending = state.pending;
+    state.pending = null;
+    state.waiting = false;
+    if (!pending) return;
+    if (pending.type === "goal") {
+      const text = pending.team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
+      reset(pending.team === "blue" ? "red" : "blue"); // conceding team kicks off
+      state.banner = text;
+      state.bannerT = 1.5;
+    } else {
+      const p = state.players.find((q) => q.team === pending.forTeam && q.kind === "field");
+      p.x = pending.spot.x;
+      p.y = pending.spot.y;
+      state.ball.x = pending.spot.x;
+      state.ball.y = pending.spot.y;
+      state.ball.vx = 0;
+      state.ball.vy = 0;
+      state.ball.pass = null;
+      state.ball.carrier = p;
+      state.ball.lastTouch = pending.forTeam;
+      p.hold = 0;
+      state.pickupCooldown = 0.5;
+      state.bannerT = 0.8;
+    }
   }
 
   function physics(dt) {
@@ -368,19 +396,22 @@
 
     // Pool edges are low: no wall bounces. Goals only count inside the mouth;
     // anywhere else the ball is out of bounds and the opponent gets a free ball.
-    if (!state.freeBall) {
-      if (ball.x - BALL_R < POOL.l) {
-        if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("red");
-        outOfBounds();
-      } else if (ball.x + BALL_R > POOL.r) {
-        if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("blue");
-        outOfBounds();
-      } else if (ball.y - BALL_R < POOL.t || ball.y + BALL_R > POOL.b) {
-        outOfBounds();
-      }
+    if (ball.x - BALL_R < POOL.l) {
+      if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("red");
+      outOfBounds();
+      return;
+    }
+    if (ball.x + BALL_R > POOL.r) {
+      if (ball.y > GOAL_TOP && ball.y < GOAL_BOT) return goal("blue");
+      outOfBounds();
+      return;
+    }
+    if (ball.y - BALL_R < POOL.t || ball.y + BALL_R > POOL.b) {
+      outOfBounds();
+      return;
     }
 
-    if (!state.freeBall) {
+    if (!state.waiting) {
       for (const p of state.players) {
         // a keeper cannot touch the ball right after passing it (grace window)
         if (p.kind !== "keeper" || p.cooldown > 0) continue;
@@ -434,7 +465,7 @@
   }
 
   function update(dt) {
-    if (state.over) return;
+    if (state.over || state.waiting) return; // frozen on goals / out of bounds until Space
     state.timeLeft -= dt;
     if (state.timeLeft <= 0) {
       state.timeLeft = 0;
@@ -444,25 +475,6 @@
     if (state.bannerT > 0) {
       state.bannerT -= dt;
       if (state.bannerT <= 0) state.banner = null;
-    }
-    if (state.freeBall) {
-      state.freeBall.t -= dt;
-      if (state.freeBall.t <= 0) {
-        const fb = state.freeBall;
-        state.freeBall = null;
-        const p = state.players.find((q) => q.team === fb.forTeam && q.kind === "field");
-        p.x = fb.spot.x;
-        p.y = fb.spot.y;
-        state.ball.x = fb.spot.x;
-        state.ball.y = fb.spot.y;
-        state.ball.vx = 0;
-        state.ball.vy = 0;
-        state.ball.pass = null;
-        state.ball.carrier = p;
-        state.ball.lastTouch = fb.forTeam;
-        p.hold = 0;
-        state.pickupCooldown = 0.5;
-      }
     }
 
     const [you, keeperBlue, ai, keeperRed] = state.players;
@@ -590,9 +602,14 @@
       ctx.font = "bold 42px ui-monospace, monospace";
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(0, H / 2 - 44, W, 88);
+      ctx.fillRect(0, H / 2 - 44, W, state.waiting ? 128 : 88);
       ctx.fillStyle = "#fef08a";
       ctx.fillText(state.banner, W / 2, H / 2 + 15);
+      if (state.waiting) {
+        ctx.font = "18px ui-monospace, monospace";
+        ctx.fillStyle = "#93c5fd";
+        ctx.fillText("press Space to continue", W / 2, H / 2 + 48);
+      }
     }
     if (state.over) {
       ctx.fillStyle = "rgba(2,6,23,0.75)";
@@ -657,6 +674,11 @@
   addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
     keys.add(key);
+    if ((e.key === " " || e.key === "Enter") && state.waiting) {
+      e.preventDefault();
+      resumePlay();
+      return;
+    }
     if (e.key === " ") {
       e.preventDefault();
       const carrier = state.ball.carrier;

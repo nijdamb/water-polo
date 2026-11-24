@@ -26,6 +26,7 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
   only near the landing point
 - Pool edges are low: the ball can go out of bounds (no wall bounces). The
   opponent then gets a free ball at the spot where it went out
+- Goals and out-of-bounds freeze play until you press Space to continue
 - The AI reacts with a randomized delay (~0.15-0.4s) to a new ball carrier or a
   new sprint, so the attacker always has the first move
 - Goalies hold their line for a randomized reaction delay (~0.2-0.5s) when a
