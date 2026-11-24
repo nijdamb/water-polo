@@ -45,7 +45,7 @@
   // catchable only near the landing point.
   const CATCH_CHANCE = 0.45;
   const PERFECT_PASS_CHANCE = 0.25;
-  const PASS_SPEED = 480;
+  const PASS_SPEED = 520;
   const HIGH_PASS_DIST = 420;
   const MAX_PASS_DIST = 900;
   const MAX_PASS_ERROR = 90; // px of sideways error on the longest imperfect pass
@@ -237,13 +237,25 @@
       wantsSprint = p.x > W * 0.45; // sprint the run-in to the goal
       if (p.x < W * 0.5 || p.hold > 1.4) shoot(p);
     } else if (!ball.carrier) {
-      tx = ball.x;
-      ty = ball.y;
-      wantsSprint = dist(p, ball) > 110; // sprint only on long chases
+      if (ball.pass) {
+        // go to the landing point to receive or intercept the pass
+        tx = ball.pass.aimX;
+        ty = ball.pass.aimY;
+      } else {
+        tx = ball.x;
+        ty = ball.y;
+      }
+      wantsSprint = dist(p, { x: tx, y: ty }) > 110; // sprint only on long chases
     } else if (ball.carrier.team === p.team) {
       // our keeper has the ball: move to a support spot to receive the pass
       tx = p.team === "red" ? W * 0.35 : W * 0.65;
       ty = H / 2 + Math.sin(state.timeLeft * 2) * 80;
+    } else if (ball.carrier.kind === "keeper") {
+      // the opponent goalie has it: keepers cannot be tackled, so drop back
+      // and protect our own goal instead of pressing
+      tx = p.team === "red" ? W * 0.78 : W * 0.22;
+      ty = clamp(ball.y, GOAL_TOP + 40, GOAL_BOT - 40);
+      wantsSprint = dist(p, { x: tx, y: ty }) > 150;
     } else {
       // pressure the carrier to steal the ball
       tx = ball.carrier.x;
@@ -320,7 +332,8 @@
 
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
-    const f = Math.pow(0.985, dt * 60);
+    // a passed ball flies farther than a rolling one
+    const f = Math.pow(ball.pass ? 0.995 : 0.985, dt * 60);
     ball.vx *= f;
     ball.vy *= f;
 
