@@ -115,7 +115,12 @@
     if (keys.has("arrowdown") || keys.has("s")) dy += 1;
     const moving = dx !== 0 || dy !== 0;
     updateStamina(p, moving && keys.has("shift"), dt);
-    if (moving) moveToward(p, p.x + dx, p.y + dy, dt, moveScale(p));
+    if (moving) {
+      const d = Math.hypot(dx, dy);
+      const step = p.speed * moveScale(p) * dt;
+      p.x = clamp(p.x + (dx / d) * step, PLAYER_R, W - PLAYER_R);
+      p.y = clamp(p.y + (dy / d) * step, PLAYER_R, H - PLAYER_R);
+    }
   }
 
   function moveKeeper(k, dt) {
@@ -188,7 +193,9 @@
       const enemy = state.players.find(
         (p) => p.kind === "field" && p.team !== ball.carrier.team
       );
-      if (enemy && state.stealCooldown <= 0 && dist(enemy, ball.carrier) < PLAYER_R + 6) {
+      // steal on contact: separate() keeps field players at PLAYER_R*2 apart,
+      // so the steal radius must be at least that to ever trigger
+      if (enemy && state.stealCooldown <= 0 && dist(enemy, ball.carrier) < PLAYER_R * 2 + 2) {
         ball.carrier = enemy;
         enemy.hold = 0;
         state.stealCooldown = 1.2;
