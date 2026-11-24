@@ -39,6 +39,18 @@
   const GOALIE_REACTION_MAX = 0.5;
   const SHOT_SPEED = 320; // ball speed above which a keeper is reacting to a shot
 
+  // Keeper catches and passes: a blocked shot is either parried back into the
+  // field or caught. A caught ball is passed to the team's field player. Long
+  // passes are high passes: less accurate (but each pass can be perfect), and
+  // catchable only near the landing point.
+  const CATCH_CHANCE = 0.45;
+  const PERFECT_PASS_CHANCE = 0.25;
+  const PASS_SPEED = 480;
+  const HIGH_PASS_DIST = 420;
+  const MAX_PASS_DIST = 900;
+  const MAX_PASS_ERROR = 90; // px of sideways error on the longest imperfect pass
+  const INTERCEPT_RADIUS = 70; // high passes are catchable only near the aim point
+
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
   const keys = new Set();
@@ -64,7 +76,7 @@
 
   function reset(kickoffTeam) {
     state = {
-      ball: { x: W / 2, y: H / 2, vx: 0, vy: 0, carrier: null },
+      ball: { x: W / 2, y: H / 2, vx: 0, vy: 0, carrier: null, pass: null },
       players: [
         makePlayer(W * 0.3, H / 2, "blue", "field"),   // you
         makePlayer(18, H / 2, "blue", "keeper"),
@@ -118,7 +130,7 @@
 
   function shoot(p) {
     const ball = state.ball;
-    if (ball.carrier !== p || p.cooldown > 0) return;
+    if (p.kind !== "field" || ball.carrier !== p || p.cooldown > 0) return;
     const goalX = p.team === "blue" ? W : 0;
     const angle = Math.atan2(H / 2 - p.y, goalX - p.x) + (Math.random() - 0.5) * 0.22;
     const power = 560;
@@ -128,6 +140,29 @@
     p.cooldown = 0.5;
     p.hold = 0;
     state.pickupCooldown = 0.35;
+  }
+
+  function pass(k, target) {
+    const ball = state.ball;
+    if (ball.carrier !== k || k.cooldown > 0 || !target) return;
+    const d = dist(k, target);
+    const aim = { x: target.x, y: target.y };
+    // every pass has a chance to be perfectly accurate; otherwise the sideways
+    // error grows with distance
+    if (Math.random() >= PERFECT_PASS_CHANCE) {
+      const err = (Math.random() - 0.5) * 2 * Math.min(d / MAX_PASS_DIST, 1) * MAX_PASS_ERROR;
+      const side = Math.atan2(target.y - k.y, target.x - k.x) + Math.PI / 2;
+      aim.x += Math.cos(side) * err;
+      aim.y += Math.sin(side) * err;
+    }
+    const ang = Math.atan2(aim.y - k.y, aim.x - k.x);
+    ball.vx = Math.cos(ang) * PASS_SPEED;
+    ball.vy = Math.sin(ang) * PASS_SPEED;
+    ball.carrier = null;
+    ball.pass = { high: d > HIGH_PASS_DIST, aimX: aim.x, aimY: aim.y };
+    k.cooldown = 0.8;
+    k.hold = 0;
+    state.pickupCooldown = ball.pass.high ? 0.1 : 0.3;
   }
 
   function moveHuman(p, dt) {
@@ -148,8 +183,16 @@
   }
 
   function moveKeeper(k, dt) {
-    const x = k.team === "blue" ? 18 : W - 18;
     const ball = state.ball;
+    if (ball.carrier === k) {
+      // holding the ball: pass to the field player after a reaction delay
+      k.reaction -= dt;
+      if (k.reaction <= 0) {
+        pass(k, state.players.find((p) => p.team === k.team && p.kind === "field"));
+      }
+      return;
+    }
+    const x = k.team === "blue" ? 18 : W - 18;
     const incoming = k.team === "blue" ? ball.vx < 0 : ball.vx > 0;
     const speed = Math.hypot(ball.vx, ball.vy);
     if (!ball.carrier && incoming && speed > SHOT_SPEED) {
@@ -197,6 +240,10 @@
       tx = ball.x;
       ty = ball.y;
       wantsSprint = dist(p, ball) > 110; // sprint only on long chases
+    } else if (ball.carrier.team === p.team) {
+      // our keeper has the ball: move to a support spot to receive the pass
+      tx = p.team === "red" ? W * 0.35 : W * 0.65;
+      ty = H / 2 + Math.sin(state.timeLeft * 2) * 80;
     } else {
       // pressure the carrier to steal the ball
       tx = ball.carrier.x;
@@ -248,9 +295,10 @@
       ball.y = ball.carrier.y;
       ball.vx = 0;
       ball.vy = 0;
-      const enemy = state.players.find(
-        (p) => p.kind === "field" && p.team !== ball.carrier.team
-      );
+      const enemy =
+        ball.carrier.kind === "field"
+          ? state.players.find((p) => p.kind === "field" && p.team !== ball.carrier.team)
+          : null; // keepers cannot be tackled
       const d = enemy ? dist(enemy, ball.carrier) : Infinity;
       if (enemy && d < TACKLE_RADIUS && state.stealCooldown <= 0) {
         if (!state.tackle || state.tackle.tackler !== enemy || state.tackle.carrier !== ball.carrier) {
@@ -299,6 +347,17 @@
       if (p.kind !== "keeper") continue;
       const d = dist(p, ball);
       if (d < PLAYER_R + BALL_R) {
+        if (Math.random() < CATCH_CHANCE) {
+          // caught: the keeper holds the ball and will pass it out
+          ball.carrier = p;
+          ball.vx = 0;
+          ball.vy = 0;
+          ball.pass = null;
+          p.reaction = REACTION_MIN + Math.random() * (REACTION_MAX - REACTION_MIN);
+          p.hold = 0;
+          state.pickupCooldown = 0.8;
+          continue;
+        }
         const nx = (ball.x - p.x) / (d || 1);
         const ny = (ball.y - p.y) / (d || 1);
         const speed = Math.max(Math.hypot(ball.vx, ball.vy) * 0.9, 180);
@@ -313,12 +372,23 @@
       for (const p of state.players) {
         if (p.kind !== "field") continue;
         if (dist(p, ball) < PLAYER_R + BALL_R + 2) {
+          // a high pass can only be caught close to its landing point
+          if (
+            ball.pass &&
+            ball.pass.high &&
+            Math.hypot(ball.x - ball.pass.aimX, ball.y - ball.pass.aimY) > INTERCEPT_RADIUS
+          ) {
+            continue;
+          }
           ball.carrier = p;
           p.hold = 0;
+          ball.pass = null;
           break;
         }
       }
     }
+    // once a pass dies (rolls out), it becomes a normal loose ball
+    if (ball.pass && Math.hypot(ball.vx, ball.vy) < 60) ball.pass = null;
   }
 
   function update(dt) {
@@ -494,10 +564,26 @@
     ctx.stroke();
   }
 
+  function drawPassTarget() {
+    const c = state.ball.carrier;
+    if (!c || c.kind !== "keeper") return;
+    const mate = state.players.find((p) => p.team === c.team && p.kind === "field");
+    if (!mate) return;
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(mate.x, mate.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   function render() {
     drawPool();
     for (const p of state.players) drawPlayer(p);
     drawBall();
+    drawPassTarget();
     drawTackle();
     drawOverlay();
   }
@@ -507,7 +593,9 @@
     keys.add(key);
     if (e.key === " ") {
       e.preventDefault();
-      shoot(state.players[0]);
+      const carrier = state.ball.carrier;
+      if (carrier === state.players[0]) shoot(carrier);
+      else if (carrier === state.players[1]) pass(carrier, state.players[0]); // your goalie passes to you
     }
     if (key === "r" && state.over) reset("blue");
   });

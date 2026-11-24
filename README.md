@@ -20,6 +20,10 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
 - Sprint: Shift (drains stamina; the AI follows the same stamina rules)
 - Shoot: Space
 - Steals need ~1s of sustained contact; sprint away to cancel a tackle
+- Goalies catch some blocked shots and pass to their field player. Press Space
+  to pass when your goalie has the ball. Long passes are high passes: more
+  sideways error (but each pass can roll perfectly accurate), and catchable
+  only near the landing point
 - The AI reacts with a randomized delay (~0.15-0.4s) to a new ball carrier or a
   new sprint, so the attacker always has the first move
 - Goalies hold their line for a randomized reaction delay (~0.2-0.5s) when a
