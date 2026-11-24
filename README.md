@@ -45,6 +45,15 @@ npm run deploy
 
 `npm run dry-run` validates a deploy without publishing.
 
+## SEO / sharing
+
+- `public/index.html` carries meta description, canonical URL, Open Graph and
+  Twitter card tags pointing at `/og-image.png` (1200x630).
+- `public/og-image.png` is a real screenshot of the game, rendered with
+  Playwright at 1200x630. `public/favicon.svg` + `public/favicon-32.png` are
+  the favicons. Regenerate the images by screenshotting the dev server with
+  Playwright (see git history for the one-off script approach).
+
 ## How it works
 
 - `src/index.ts` — Worker entrypoint. Serves `/api/info` as JSON and delegates
