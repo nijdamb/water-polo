@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
+Then open http://localhost:8787 to play (`/`), worker info at `/api/info`.
 
 ## Controls
 
@@ -33,8 +33,8 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
   shot comes in, then dive to the predicted crossing point, so close hard
   shots can beat them
 - Restart after full time: R
-- Kit: home team white, visiting team navy, both keepers red caps with a
-  team-colour accent
+- Kit follows water polo convention. Home wears white, the visiting team
+  navy, and both keepers wear red caps with a team-colour accent
 
 ## Deploy
 
@@ -56,11 +56,11 @@ npm run deploy
 
 ## How it works
 
-- `src/index.ts` — Worker entrypoint. Serves `/api/info` as JSON and delegates
+- `src/index.ts`: Worker entrypoint. Serves `/api/info` as JSON and delegates
   everything else to the static assets binding (`public/`).
-- `public/index.html` + `public/game.js` — the game. Canvas 2D, fixed pool
+- `public/index.html` + `public/game.js`: the game. Canvas 2D, fixed pool
   size 960x540, requestAnimationFrame loop with delta-time physics.
-- `wrangler.jsonc` — Worker config: assets served through the Worker
+- `wrangler.jsonc`: Worker config: assets served through the Worker
   (`run_worker_first`), observability enabled.
 
 ## Ideas for next steps

@@ -335,7 +335,7 @@
     state.ball.lastTouch = forTeam;
     p.hold = 0;
     state.pickupCooldown = 0.5;
-    state.banner = `OUT — FREE BALL ${TEAM_STYLE[forTeam].name}`;
+    state.banner = `OUT! FREE BALL ${TEAM_STYLE[forTeam].name}`;
     state.waiting = true;
     state.countdown = 0;
   }
