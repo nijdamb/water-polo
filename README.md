@@ -22,6 +22,9 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
 - Steals need ~1s of sustained contact; sprint away to cancel a tackle
 - The AI reacts with a randomized delay (~0.15-0.4s) to a new ball carrier or a
   new sprint, so the attacker always has the first move
+- Goalies hold their line for a randomized reaction delay (~0.2-0.5s) when a
+  shot comes in, then dive to the predicted crossing point, so close hard
+  shots can beat them
 - Restart after full time: R
 
 ## Deploy

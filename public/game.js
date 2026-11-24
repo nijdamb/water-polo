@@ -32,6 +32,13 @@
   const REACTION_MIN = 0.15;
   const REACTION_MAX = 0.4;
 
+  // Goalies react to a shot with their own randomized delay; until it elapses
+  // they hold their line instead of tracking the ball perfectly. Afterwards
+  // they move to the predicted goal-line crossing point.
+  const GOALIE_REACTION_MIN = 0.2;
+  const GOALIE_REACTION_MAX = 0.5;
+  const SHOT_SPEED = 320; // ball speed above which a keeper is reacting to a shot
+
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
   const keys = new Set();
@@ -48,7 +55,8 @@
       hold: 0,     // time spent carrying the ball
       stamina: STAM_MAX,
       sprinting: false,
-      reaction: 0, // AI only: remaining reaction delay before it can act on a new intent
+      reaction: 0, // remaining reaction delay before acting on a new intent
+      shotPending: false, // keeper: a shot is incoming and its reaction is armed
       lastCarrier: null,
       sprintIntent: false,
     };
@@ -141,7 +149,30 @@
 
   function moveKeeper(k, dt) {
     const x = k.team === "blue" ? 18 : W - 18;
-    const targetY = clamp(state.ball.y, GOAL_TOP + 26, GOAL_BOT - 26);
+    const ball = state.ball;
+    const incoming = k.team === "blue" ? ball.vx < 0 : ball.vx > 0;
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (!ball.carrier && incoming && speed > SHOT_SPEED) {
+      // arm the reaction delay once per shot, not every frame
+      if (!k.shotPending) {
+        k.shotPending = true;
+        k.reaction = GOALIE_REACTION_MIN + Math.random() * (GOALIE_REACTION_MAX - GOALIE_REACTION_MIN);
+      }
+      k.reaction -= dt;
+      if (k.reaction > 0) {
+        // still reacting: hold the current line
+        moveToward(k, x, k.y, dt);
+        return;
+      }
+      // predict where the ball crosses this goal line
+      const t = (x - ball.x) / ball.vx;
+      const targetY = clamp(ball.y + ball.vy * t, GOAL_TOP + 26, GOAL_BOT - 26);
+      moveToward(k, x, targetY, dt);
+      return;
+    }
+    k.shotPending = false;
+    k.reaction = 0;
+    const targetY = clamp(ball.y, GOAL_TOP + 26, GOAL_BOT - 26);
     moveToward(k, x, targetY, dt);
   }
 
