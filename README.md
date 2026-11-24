@@ -20,6 +20,8 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
 - Sprint: Shift (drains stamina; the AI follows the same stamina rules)
 - Shoot: Space
 - Steals need ~1s of sustained contact; sprint away to cancel a tackle
+- The AI reacts with a randomized delay (~0.15-0.4s) to a new ball carrier or a
+  new sprint, so the attacker always has the first move
 - Restart after full time: R
 
 ## Deploy

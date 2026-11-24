@@ -26,6 +26,12 @@
   const TACKLE_RADIUS = PLAYER_R * 2 + 2;
   const TACKLE_DURATION = 0.9;
 
+  // The AI does not react instantly: when its intent changes (new ball
+  // carrier, or a new sprint) it waits a randomized reaction time first.
+  // The attacker always has the first move.
+  const REACTION_MIN = 0.15;
+  const REACTION_MAX = 0.4;
+
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
   const keys = new Set();
@@ -42,6 +48,9 @@
       hold: 0,     // time spent carrying the ball
       stamina: STAM_MAX,
       sprinting: false,
+      reaction: 0, // AI only: remaining reaction delay before it can act on a new intent
+      lastCarrier: null,
+      sprintIntent: false,
     };
   }
 
@@ -138,6 +147,11 @@
 
   function moveAI(p, dt) {
     const ball = state.ball;
+    // A new ball carrier costs reaction time, just like in real play.
+    if (ball.carrier !== p.lastCarrier) {
+      p.lastCarrier = ball.carrier;
+      p.reaction = REACTION_MIN + Math.random() * (REACTION_MAX - REACTION_MIN);
+    }
     let tx;
     let ty;
     let wantsSprint = false;
@@ -158,7 +172,13 @@
       ty = ball.carrier.y;
       wantsSprint = dist(p, ball.carrier) > 40; // sprint to keep contact while pressing
     }
-    updateStamina(p, wantsSprint, dt);
+    // Starting to sprint also costs a fresh, randomized reaction delay.
+    if (wantsSprint && !p.sprintIntent) {
+      p.reaction = REACTION_MIN + Math.random() * (REACTION_MAX - REACTION_MIN);
+    }
+    p.sprintIntent = wantsSprint;
+    p.reaction = Math.max(0, p.reaction - dt);
+    updateStamina(p, wantsSprint && p.reaction <= 0, dt);
     moveToward(p, tx, ty, dt, moveScale(p));
   }
 
