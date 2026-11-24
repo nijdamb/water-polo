@@ -1,4 +1,5 @@
-"use strict";
+import { createControls } from "./controls.js";
+
 (() => {
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
@@ -65,8 +66,8 @@
 
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
-  const keys = new Set();
   let state;
+  const controls = createControls(getAction, runAction);
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -184,14 +185,9 @@
   }
 
   function moveHuman(p, dt) {
-    let dx = 0;
-    let dy = 0;
-    if (keys.has("arrowleft") || keys.has("a")) dx -= 1;
-    if (keys.has("arrowright") || keys.has("d")) dx += 1;
-    if (keys.has("arrowup") || keys.has("w")) dy -= 1;
-    if (keys.has("arrowdown") || keys.has("s")) dy += 1;
+    const { x: dx, y: dy, sprint } = controls.movement();
     const moving = dx !== 0 || dy !== 0;
-    updateStamina(p, moving && keys.has("shift"), dt);
+    updateStamina(p, moving && sprint, dt);
     if (moving) {
       const d = Math.hypot(dx, dy);
       const step = p.speed * moveScale(p) * dt;
@@ -480,6 +476,7 @@
     if (state.timeLeft <= 0) {
       state.timeLeft = 0;
       state.over = true;
+      updateHud();
       return;
     }
     if (state.bannerT > 0) {
@@ -623,7 +620,7 @@
       ctx.fillRect(0, H / 2 - 44, W, state.waiting ? 128 : 88);
       ctx.fillStyle = "#fef08a";
       ctx.fillText(state.banner, W / 2, H / 2 + 15);
-      if (state.waiting && state.countdown <= 0) {
+      if (!controls.mobile && state.waiting && state.countdown <= 0) {
         ctx.font = "18px ui-monospace, monospace";
         ctx.fillStyle = "#93c5fd";
         ctx.fillText("press Space to continue", W / 2, H / 2 + 48);
@@ -651,9 +648,11 @@
         W / 2,
         H / 2 + 16
       );
-      ctx.font = "18px ui-monospace, monospace";
-      ctx.fillStyle = "#7d9bbd";
-      ctx.fillText("Press R to play again", W / 2, H / 2 + 56);
+      if (!controls.mobile) {
+        ctx.font = "18px ui-monospace, monospace";
+        ctx.fillStyle = "#7d9bbd";
+        ctx.fillText("Press R to play again", W / 2, H / 2 + 56);
+      }
     }
   }
 
@@ -697,30 +696,32 @@
     drawOverlay();
   }
 
-  addEventListener("keydown", (e) => {
-    const key = e.key.toLowerCase();
-    keys.add(key);
-    if ((e.key === " " || e.key === "Enter") && state.waiting && state.countdown <= 0) {
-      e.preventDefault();
-      resumePlay();
-      return;
-    }
-    if (e.key === " ") {
-      e.preventDefault();
-      const carrier = state.ball.carrier;
-      if (carrier === state.players[0]) shoot(carrier);
-      else if (carrier === state.players[1]) pass(carrier, state.players[0]); // your goalie passes to you
-    }
-    if (key === "r" && state.over) reset("blue");
-  });
-  addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+  function getAction() {
+    if (state.over) return "restart";
+    if (state.waiting) return state.countdown <= 0 ? "continue" : null;
+    const [human, keeper] = state.players;
+    if (state.ball.carrier === human) return "shoot";
+    if (state.ball.carrier === keeper) return "pass";
+    return null;
+  }
+
+  function runAction(action) {
+    const [human, keeper] = state.players;
+    if (action === "shoot") shoot(human);
+    if (action === "pass") pass(keeper, human);
+    if (action === "continue") resumePlay();
+    if (action === "restart") reset("blue");
+  }
 
   let last = performance.now();
   function frame(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
-    update(dt);
-    render();
+    if (controls.active()) {
+      update(dt);
+      render();
+      controls.refreshAction();
+    }
     requestAnimationFrame(frame);
   }
 
