@@ -76,7 +76,9 @@ import { createControls } from "./controls.js";
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
   let state;
-  const controls = createControls(getAction, runAction);
+  let frameRequest;
+  let lastFrame;
+  const controls = createControls(getAction, runAction, syncAnimation);
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -545,12 +547,14 @@ import { createControls } from "./controls.js";
   }
 
   function updateHud() {
-    scoreEl.textContent = `HOME ${state.score.blue} : ${state.score.red} AWAY`;
+    const score = `HOME ${state.score.blue} : ${state.score.red} AWAY`;
+    if (scoreEl.textContent !== score) scoreEl.textContent = score;
     const s = Math.ceil(state.timeLeft);
-    timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    const timer = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    if (timerEl.textContent !== timer) timerEl.textContent = timer;
   }
 
-  function drawPool() {
+  function drawPool(ctx) {
     // deck around the pool - the ball can roll out here
     ctx.fillStyle = "#0a1626";
     ctx.fillRect(0, 0, W, H);
@@ -758,8 +762,15 @@ import { createControls } from "./controls.js";
     }
   }
 
+  let poolImage;
   function render() {
-    drawPool();
+    if (!poolImage) {
+      poolImage = document.createElement("canvas");
+      poolImage.width = W;
+      poolImage.height = H;
+      drawPool(poolImage.getContext("2d"));
+    }
+    ctx.drawImage(poolImage, 0, 0);
     for (const p of state.players) drawPlayer(p);
     drawBall();
     drawPassTarget();
@@ -786,26 +797,42 @@ import { createControls } from "./controls.js";
     if (action === "pass") pass(keeper, human);
     if (action === "continue") resumePlay();
     if (action === "restart") reset("blue");
+    syncAnimation();
   }
 
-  let last = performance.now();
-  function frame(now) {
-    const dt = Math.min((now - last) / 1000, 0.05);
-    last = now;
+  function syncAnimation() {
     if (controls.active()) {
-      // Limit how far a fast shot travels between keeper collision checks.
-      const travel = Math.hypot(state.ball.vx, state.ball.vy) * dt;
-      const steps = Math.max(1, Math.ceil(travel / PLAYER_R));
-      for (let i = 0; i < steps; i++) {
-        update(dt / steps);
-      }
-      updateHud();
-      controls.refreshAction();
-      render();
+      frameRequest ??= requestAnimationFrame(frame);
+      return;
     }
-    requestAnimationFrame(frame);
+    if (frameRequest !== undefined) cancelAnimationFrame(frameRequest);
+    frameRequest = undefined;
+    lastFrame = undefined;
+  }
+
+  function frame(now) {
+    frameRequest = undefined;
+    if (!controls.active()) {
+      lastFrame = undefined;
+      return;
+    }
+
+    const dt = Math.min((now - (lastFrame ?? now)) / 1000, 0.05);
+    lastFrame = now;
+    // Limit how far a fast shot travels between keeper collision checks.
+    const travel = Math.hypot(state.ball.vx, state.ball.vy) * dt;
+    const steps = Math.max(1, Math.ceil(travel / PLAYER_R));
+    for (let i = 0; i < steps; i++) {
+      update(dt / steps);
+    }
+    updateHud();
+    controls.refreshAction();
+    render();
+
+    if (!state.over && (!state.waiting || state.countdown > 0)) syncAnimation();
+    else lastFrame = undefined;
   }
 
   reset("blue");
-  requestAnimationFrame(frame);
+  syncAnimation();
 })();
