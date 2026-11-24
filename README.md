@@ -33,6 +33,8 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
   shot comes in, then dive to the predicted crossing point, so close hard
   shots can beat them
 - Restart after full time: R
+- Kit: home team white, visiting team navy, both keepers red caps with a
+  team-colour accent
 
 ## Deploy
 

@@ -17,6 +17,13 @@
   const MATCH_SECONDS = 90;
   const RESUME_DELAY = 1.5; // countdown after pressing Space on a frozen scene
 
+  // Water polo kit: home team white, visiting team navy; both keepers wear a
+  // red cap with the team colour as accent.
+  const TEAM_STYLE = {
+    blue: { name: "HOME", body: "#e2e8f0", cap: "#f8fafc", keeperCap: "#dc2626", accent: "#f8fafc" },
+    red: { name: "AWAY", body: "#1e3a8a", cap: "#2563eb", keeperCap: "#dc2626", accent: "#60a5fa" },
+  };
+
   // Sprint: both field players share the same stamina rules, so a well-timed
   // sprint can shake off or catch the AI.
   const SPRINT_MULT = 1.65;
@@ -299,7 +306,7 @@
 
   function goal(team) {
     state.score[team] += 1;
-    const text = team === "blue" ? "GOAL! BLUE SCORES" : "GOAL! RED SCORES";
+    const text = team === "blue" ? "GOAL! HOME SCORES" : "GOAL! AWAY SCORES";
     // set up the kickoff right away (ball at the center, conceding team in
     // possession), then freeze until the user presses Space
     reset(team === "blue" ? "red" : "blue");
@@ -328,7 +335,7 @@
     state.ball.lastTouch = forTeam;
     p.hold = 0;
     state.pickupCooldown = 0.5;
-    state.banner = `OUT — FREE BALL ${forTeam.toUpperCase()}`;
+    state.banner = `OUT — FREE BALL ${TEAM_STYLE[forTeam].name}`;
     state.waiting = true;
     state.countdown = 0;
   }
@@ -491,7 +498,7 @@
   }
 
   function updateHud() {
-    scoreEl.textContent = `BLUE ${state.score.blue} : ${state.score.red} RED`;
+    scoreEl.textContent = `HOME ${state.score.blue} : ${state.score.red} AWAY`;
     const s = Math.ceil(state.timeLeft);
     timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   }
@@ -549,6 +556,7 @@
   }
 
   function drawPlayer(p) {
+    const style = TEAM_STYLE[p.team];
     ctx.beginPath();
     ctx.ellipse(p.x + 3, p.y + 5, PLAYER_R * 0.9, PLAYER_R * 0.6, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.25)";
@@ -556,17 +564,23 @@
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-    ctx.fillStyle = p.team === "blue" ? "#3b82f6" : "#ef4444";
+    ctx.fillStyle = style.body;
     ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.strokeStyle = p.team === "blue" ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.5)";
     ctx.stroke();
 
-    // cap: keepers wear yellow
+    // cap: keepers wear red with a team-colour accent dot
     ctx.beginPath();
     ctx.arc(p.x, p.y, PLAYER_R * 0.55, 0, Math.PI * 2);
-    ctx.fillStyle = p.kind === "keeper" ? "#facc15" : p.team === "blue" ? "#1d4ed8" : "#b91c1c";
+    ctx.fillStyle = p.kind === "keeper" ? style.keeperCap : style.cap;
     ctx.fill();
+    if (p.kind === "keeper") {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, PLAYER_R * 0.25, 0, Math.PI * 2);
+      ctx.fillStyle = style.accent;
+      ctx.fill();
+    }
 
     if (p.kind === "field") {
       const w = 30;
@@ -632,7 +646,7 @@
       ctx.font = "bold 30px ui-monospace, monospace";
       ctx.fillStyle = "#93c5fd";
       ctx.fillText(
-        `BLUE ${state.score.blue} : ${state.score.red} RED`,
+        `HOME ${state.score.blue} : ${state.score.red} AWAY`,
         W / 2,
         H / 2 + 16
       );
