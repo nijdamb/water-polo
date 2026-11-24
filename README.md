@@ -22,9 +22,10 @@ Then open http://localhost:8787 to play (`/`), worker info at `/api/info`.
   a stronger shot. Swim up or down to steer the yellow target.
 - You need about 0.9 seconds of contact to steal. The away defender needs
   about 1.5 seconds. Break contact to cancel a tackle.
-- Goalies catch some blocked shots and pass to their field player. Press Space
-  or Pass when your goalie has the ball. Your goalie leads you on long passes.
-  High passes become catchable near their landing point.
+- Your goalie holds the ball after a catch until you press Space or Pass. The
+  away defender drops back near its starting position while the goalie holds it.
+  Your goalie leads you on long passes. High passes become catchable near their
+  landing point.
 - Pool edges are low: the ball can go out of bounds (no wall bounces). The
   opponent then gets a free ball at the spot where it went out
 - Goals and out-of-bounds freeze play until you press Space to continue

@@ -243,7 +243,7 @@ import { createControls } from "./controls.js";
   function moveKeeper(k, dt) {
     const ball = state.ball;
     if (ball.carrier === k) {
-      // holding the ball: pass to the field player after a reaction delay
+      if (k.team === "blue") return;
       k.reaction -= dt;
       if (k.reaction <= 0) {
         pass(k, state.players.find((p) => p.team === k.team && p.kind === "field"));
@@ -318,10 +318,8 @@ import { createControls } from "./controls.js";
       tx = p.team === "red" ? W * 0.35 : W * 0.65;
       ty = H / 2 + Math.sin(state.timeLeft * 2) * 80;
     } else if (ball.carrier.kind === "keeper") {
-      // the opponent goalie has it: keepers cannot be tackled, so drop back
-      // and protect our own goal instead of pressing
-      tx = p.team === "red" ? W * 0.78 : W * 0.22;
-      ty = clamp(ball.y, GOAL_TOP + 40, GOAL_BOT - 40);
+      tx = AWAY_GUARD_X;
+      ty = H / 2;
       wantsSprint = dist(p, { x: tx, y: ty }) > 150;
     } else {
       const carrier = ball.carrier;
