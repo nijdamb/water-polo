@@ -143,6 +143,12 @@
       touch-action: manipulation;
     }
     .touch-actions button { touch-action: none; }
+    .mobile #action { min-height: 52px; }
+    #shot-hint {
+      display: block;
+      font-size: 10px;
+      font-weight: 400;
+    }
     .mobile button:disabled { opacity: 0.6; }
     .mobile button:focus-visible { outline: 2px solid #dbeafe; outline-offset: 2px; }
     .mobile #play, .mobile #action:not(:disabled), #sprint[aria-pressed="true"] {
@@ -172,9 +178,12 @@
       <div id="stick" role="group" aria-label="Movement joystick"><span></span></div>
       <div class="touch-actions">
         <button id="sprint" type="button" aria-pressed="false">Sprint</button>
-        <button id="action" type="button">Shoot</button>
+        <button id="action" type="button" aria-labelledby="action-label">
+          <span id="action-label">Shoot</span>
+          <small id="shot-hint">Hold for power</small>
+        </button>
       </div>
-      <p class="hint">Move: WASD/arrows &middot; Sprint: Shift &middot; Space: shoot, or pass when your goalie has the ball &middot; Steals need sustained contact &middot; Ball out = free ball for the opponent &middot; Space: continue after goal/out &middot; R: restart</p>
+      <p class="hint">Move with WASD/arrows &middot; Sprint with Shift &middot; Tap Space to shoot or hold for power &middot; Space passes from your goalie &middot; Stay close to steal &middot; Ball out gives the opponent a free ball &middot; Space continues after goal/out &middot; R restarts</p>
     </section>
   </main>
   <script type="module" src="/game.js"></script>

@@ -17,13 +17,16 @@ Then open http://localhost:8787 to play (`/`), worker info at `/api/info`.
 ## Controls
 
 - Move: WASD or arrow keys
-- Sprint: Shift (drains stamina; the AI follows the same stamina rules)
-- Shoot: Space
-- Steals need ~1s of sustained contact; sprint away to cancel a tackle
-- Goalies catch some blocked shots and pass to their field player. Press Space
-  to pass when your goalie has the ball. Long passes are high passes: more
-  sideways error (but each pass can roll perfectly accurate), and catchable
-  only near the landing point
+- Sprint with Shift or tap Sprint on mobile. The home swimmer has a slightly
+  larger stamina reserve and recovers faster.
+- Tap Space or the mobile Shoot button for a quick shot. Hold and release for
+  a stronger shot. Swim up or down to steer the yellow target.
+- You need about 0.9 seconds of contact to steal. The away defender needs
+  about 1.5 seconds. Break contact to cancel a tackle.
+- Your goalie holds the ball after a catch until you press Space or Pass. The
+  away defender drops back near its starting position while the goalie holds it.
+  Your goalie leads you on long passes. High passes become catchable near their
+  landing point.
 - Pool edges are low: the ball can go out of bounds (no wall bounces). The
   opponent then gets a free ball at the spot where it went out
 - Goals and out-of-bounds freeze play until you press Space to continue
