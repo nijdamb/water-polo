@@ -15,6 +15,7 @@
   const PLAYER_R = 16;
   const BALL_R = 9;
   const MATCH_SECONDS = 90;
+  const RESUME_DELAY = 1.5; // countdown after pressing Space on a frozen scene
 
   // Sprint: both field players share the same stamina rules, so a well-timed
   // sprint can shake off or catch the AI.
@@ -96,6 +97,7 @@
       stealCooldown: 0,
       tackle: null,
       waiting: false, // paused after a goal / out of bounds until the user presses Space
+      countdown: 0,   // >0 while counting down after Space before play resumes
     };
     state.ball.carrier = state.players.find(
       (p) => p.team === kickoffTeam && p.kind === "field"
@@ -303,6 +305,7 @@
     reset(team === "blue" ? "red" : "blue");
     state.banner = text;
     state.waiting = true;
+    state.countdown = 0;
   }
 
   // The ball left the pool: put the free ball in the hands of the opponent at
@@ -327,11 +330,15 @@
     state.pickupCooldown = 0.5;
     state.banner = `OUT — FREE BALL ${forTeam.toUpperCase()}`;
     state.waiting = true;
+    state.countdown = 0;
   }
 
+  // Space on a frozen scene: hide the banner and start a short countdown
+  // before play actually resumes.
   function resumePlay() {
-    state.waiting = false;
-    state.bannerT = 1.2; // let the banner fade out after continuing
+    state.banner = null;
+    state.bannerT = 0;
+    state.countdown = RESUME_DELAY;
   }
 
   function physics(dt) {
@@ -450,7 +457,18 @@
   }
 
   function update(dt) {
-    if (state.over || state.waiting) return; // frozen on goals / out of bounds until Space
+    if (state.over) return;
+    if (state.waiting) {
+      // frozen on goals / out of bounds; after Space, count down before resuming
+      if (state.countdown > 0) {
+        state.countdown -= dt;
+        if (state.countdown <= 0) {
+          state.countdown = 0;
+          state.waiting = false;
+        }
+      }
+      return;
+    }
     state.timeLeft -= dt;
     if (state.timeLeft <= 0) {
       state.timeLeft = 0;
@@ -590,11 +608,19 @@
       ctx.fillRect(0, H / 2 - 44, W, state.waiting ? 128 : 88);
       ctx.fillStyle = "#fef08a";
       ctx.fillText(state.banner, W / 2, H / 2 + 15);
-      if (state.waiting) {
+      if (state.waiting && state.countdown <= 0) {
         ctx.font = "18px ui-monospace, monospace";
         ctx.fillStyle = "#93c5fd";
         ctx.fillText("press Space to continue", W / 2, H / 2 + 48);
       }
+    }
+    if (state.waiting && state.countdown > 0) {
+      ctx.font = "bold 72px ui-monospace, monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(0, H / 2 - 60, W, 120);
+      ctx.fillStyle = "#fef08a";
+      ctx.fillText(String(Math.ceil(state.countdown)), W / 2, H / 2 + 25);
     }
     if (state.over) {
       ctx.fillStyle = "rgba(2,6,23,0.75)";
@@ -659,7 +685,7 @@
   addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
     keys.add(key);
-    if ((e.key === " " || e.key === "Enter") && state.waiting) {
+    if ((e.key === " " || e.key === "Enter") && state.waiting && state.countdown <= 0) {
       e.preventDefault();
       resumePlay();
       return;
