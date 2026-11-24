@@ -570,15 +570,16 @@
     ctx.strokeStyle = p.team === "blue" ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.5)";
     ctx.stroke();
 
-    // cap: keepers wear a team-colour inner with a red outer border
+    // cap: keepers wear red with a small team-colour (white/blue) center
     ctx.beginPath();
     ctx.arc(p.x, p.y, PLAYER_R * 0.55, 0, Math.PI * 2);
-    ctx.fillStyle = p.kind === "keeper" ? style.accent : style.cap;
+    ctx.fillStyle = p.kind === "keeper" ? style.keeperCap : style.cap;
     ctx.fill();
     if (p.kind === "keeper") {
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = style.keeperCap;
-      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, PLAYER_R * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = style.accent;
+      ctx.fill();
     }
 
     if (p.kind === "field") {
