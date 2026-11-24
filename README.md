@@ -18,7 +18,8 @@ Then open http://localhost:8787 to play (`/`), worker info at `/api/info`.
 
 - Move: WASD or arrow keys
 - Sprint: Shift (drains stamina; the AI follows the same stamina rules)
-- Shoot: Space
+- Tap Space or the mobile Shoot button for a quick shot. Hold and release for
+  a stronger shot. The yellow marker shows where you're aiming.
 - Steals need ~1s of sustained contact; sprint away to cancel a tackle
 - Goalies catch some blocked shots and pass to their field player. Press Space
   to pass when your goalie has the ball. Long passes are high passes: more

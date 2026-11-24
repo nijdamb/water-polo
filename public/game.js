@@ -15,6 +15,10 @@ import { createControls } from "./controls.js";
   const GOAL_BOT = GOAL_TOP + GOAL_H;
   const PLAYER_R = 16;
   const BALL_R = 9;
+  const SHOT_TARGET_X = POOL.r - BALL_R;
+  const SHOT_TARGET_INSET = BALL_R + 6;
+  const QUICK_SHOT_SPEED = 460;
+  const POWER_SHOT_SPEED = 780;
   const MATCH_SECONDS = 90;
   const RESUME_DELAY = 1.5; // countdown after pressing Space on a frozen scene
 
@@ -50,7 +54,7 @@ import { createControls } from "./controls.js";
   // they move to the predicted goal-line crossing point.
   const GOALIE_REACTION_MIN = 0.2;
   const GOALIE_REACTION_MAX = 0.5;
-  const SHOT_SPEED = 320; // ball speed above which a keeper is reacting to a shot
+  const KEEPER_REACTION_SPEED = 320;
 
   // Keeper catches and passes: a blocked shot is either parried back into the
   // field or caught. A caught ball is passed to the team's field player. Long
@@ -144,14 +148,21 @@ import { createControls } from "./controls.js";
     return scale;
   }
 
-  function shoot(p) {
+  function shotTargetY() {
+    const [human, , , keeper] = state.players;
+    if (keeper.y > H / 2 || (keeper.y === H / 2 && human.y <= H / 2)) {
+      return GOAL_TOP + SHOT_TARGET_INSET;
+    }
+    return GOAL_BOT - SHOT_TARGET_INSET;
+  }
+
+  function shoot(p, angle, speed) {
     const ball = state.ball;
     if (p.kind !== "field" || ball.carrier !== p || p.cooldown > 0) return;
-    const goalX = p.team === "blue" ? W : 0;
-    const angle = Math.atan2(H / 2 - p.y, goalX - p.x) + (Math.random() - 0.5) * 0.22;
-    const power = 560;
-    ball.vx = Math.cos(angle) * power;
-    ball.vy = Math.sin(angle) * power;
+    ball.x = p.x;
+    ball.y = p.y;
+    ball.vx = Math.cos(angle) * speed;
+    ball.vy = Math.sin(angle) * speed;
     ball.carrier = null;
     ball.lastTouch = p.team;
     p.cooldown = 0.5;
@@ -209,7 +220,7 @@ import { createControls } from "./controls.js";
     const x = k.team === "blue" ? POOL.l + PLAYER_R : POOL.r - PLAYER_R;
     const incoming = k.team === "blue" ? ball.vx < 0 : ball.vx > 0;
     const speed = Math.hypot(ball.vx, ball.vy);
-    if (!ball.carrier && incoming && speed > SHOT_SPEED) {
+    if (!ball.carrier && incoming && speed > KEEPER_REACTION_SPEED) {
       // arm the reaction delay once per shot, not every frame
       if (!k.shotPending) {
         k.shotPending = true;
@@ -249,7 +260,10 @@ import { createControls } from "./controls.js";
       tx = 40;
       ty = H / 2 + Math.sin(state.timeLeft * 3) * 70;
       wantsSprint = p.x > W * 0.45; // sprint the run-in to the goal
-      if (p.x < W * 0.5 || p.hold > 1.4) shoot(p);
+      if (p.x < W * 0.5 || p.hold > 1.4) {
+        const angle = Math.atan2(H / 2 - p.y, -p.x) + (Math.random() - 0.5) * 0.22;
+        shoot(p, angle, 560);
+      }
     } else if (!ball.carrier) {
       if (ball.pass) {
         // go to the landing point to receive or intercept the pass
@@ -476,7 +490,6 @@ import { createControls } from "./controls.js";
     if (state.timeLeft <= 0) {
       state.timeLeft = 0;
       state.over = true;
-      updateHud();
       return;
     }
     if (state.bannerT > 0) {
@@ -491,7 +504,6 @@ import { createControls } from "./controls.js";
     moveKeeper(keeperRed, dt);
     separate(you, ai);
     physics(dt);
-    updateHud();
   }
 
   function updateHud() {
@@ -687,11 +699,33 @@ import { createControls } from "./controls.js";
     ctx.setLineDash([]);
   }
 
+  function drawShotTarget() {
+    if (getAction() !== "shoot") return;
+    const y = shotTargetY();
+    const charge = controls.shotCharge();
+    ctx.beginPath();
+    ctx.arc(SHOT_TARGET_X, y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = "#fef08a";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#172236";
+    ctx.stroke();
+
+    if (charge > 0) {
+      ctx.beginPath();
+      ctx.arc(SHOT_TARGET_X, y, 12, -Math.PI / 2, (charge * 2 - 0.5) * Math.PI);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#fef08a";
+      ctx.stroke();
+    }
+  }
+
   function render() {
     drawPool();
     for (const p of state.players) drawPlayer(p);
     drawBall();
     drawPassTarget();
+    drawShotTarget();
     drawTackle();
     drawOverlay();
   }
@@ -700,14 +734,17 @@ import { createControls } from "./controls.js";
     if (state.over) return "restart";
     if (state.waiting) return state.countdown <= 0 ? "continue" : null;
     const [human, keeper] = state.players;
-    if (state.ball.carrier === human) return "shoot";
+    if (state.ball.carrier === human && human.cooldown <= 0) return "shoot";
     if (state.ball.carrier === keeper) return "pass";
     return null;
   }
 
-  function runAction(action) {
+  function runAction(action, powerShot) {
     const [human, keeper] = state.players;
-    if (action === "shoot") shoot(human);
+    if (action === "shoot") {
+      const angle = Math.atan2(shotTargetY() - human.y, SHOT_TARGET_X - human.x);
+      shoot(human, angle, powerShot ? POWER_SHOT_SPEED : QUICK_SHOT_SPEED);
+    }
     if (action === "pass") pass(keeper, human);
     if (action === "continue") resumePlay();
     if (action === "restart") reset("blue");
@@ -718,9 +755,15 @@ import { createControls } from "./controls.js";
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     if (controls.active()) {
-      update(dt);
-      render();
+      // Limit how far a fast shot travels between keeper collision checks.
+      const travel = Math.hypot(state.ball.vx, state.ball.vy) * dt;
+      const steps = Math.max(1, Math.ceil(travel / PLAYER_R));
+      for (let i = 0; i < steps; i++) {
+        update(dt / steps);
+      }
+      updateHud();
       controls.refreshAction();
+      render();
     }
     requestAnimationFrame(frame);
   }

@@ -1,15 +1,55 @@
 const movementKeys = new Set(["a", "d", "w", "s", "arrowleft", "arrowright", "arrowup", "arrowdown", "shift"]);
 const actionLabels = { shoot: "Shoot", pass: "Pass", continue: "Continue", restart: "Play again" };
+const POWER_SHOT_MS = 350;
 
-function bindGameButton(button, activate) {
-  button.addEventListener("click", activate);
+function bindGameButton(button, { activate, press, release = activate, cancel }) {
+  let touchId;
+
+  function releaseAt(x, y) {
+    if (!button.disabled && button.contains(document.elementFromPoint(x, y))) release();
+    else cancel?.();
+  }
+
+  button.addEventListener("click", (event) => {
+    if (!press || event.detail === 0) activate();
+  });
+
   // A tap made while another finger holds the stick may not produce a click.
-  button.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
+  button.addEventListener("touchstart", (event) => {
+    event.preventDefault();
+    if (button.disabled || touchId !== undefined) return;
+    touchId = event.changedTouches[0].identifier;
+    press?.();
+  }, { passive: false });
   button.addEventListener("touchend", (event) => {
     event.preventDefault();
-    const { clientX, clientY } = event.changedTouches[0];
-    if (!button.disabled && document.elementFromPoint(clientX, clientY) === button) activate();
+    const touch = Array.from(event.changedTouches).find((point) => point.identifier === touchId);
+    if (!touch) return;
+    touchId = undefined;
+    releaseAt(touch.clientX, touch.clientY);
   }, { passive: false });
+  button.addEventListener("touchcancel", (event) => {
+    if (Array.from(event.changedTouches).some((point) => point.identifier === touchId)) {
+      touchId = undefined;
+      cancel?.();
+    }
+  });
+
+  if (press) {
+    button.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch" && event.button === 0) press();
+    });
+    button.addEventListener("pointerup", (event) => {
+      if (event.pointerType !== "touch" && event.button === 0) releaseAt(event.clientX, event.clientY);
+    });
+    for (const type of ["pointerleave", "pointercancel"]) {
+      button.addEventListener(type, (event) => {
+        if (event.pointerType !== "touch") cancel?.();
+      });
+    }
+  }
+
+  return () => { touchId = undefined; };
 }
 
 export function createControls(getAction, runAction) {
@@ -21,6 +61,8 @@ export function createControls(getAction, runAction) {
   const stick = document.getElementById("stick");
   const sprintButton = document.getElementById("sprint");
   const actionButton = document.getElementById("action");
+  const actionLabel = document.getElementById("action-label");
+  const shotHint = document.getElementById("shot-hint");
   const touch = matchMedia("(pointer: coarse)");
   const landscape = matchMedia("(orientation: landscape)");
   const keys = new Set();
@@ -29,6 +71,7 @@ export function createControls(getAction, runAction) {
   let stickX = 0;
   let stickY = 0;
   let sprint = false;
+  let actionPress;
 
   function active() {
     return !document.hidden && (!touch.matches || (started && landscape.matches));
@@ -55,6 +98,9 @@ export function createControls(getAction, runAction) {
     keys.clear();
     releaseStick();
     setSprint(false);
+    actionPress = undefined;
+    clearSprintTouch();
+    clearActionTouch();
   }
 
   function canLockOrientation() {
@@ -71,18 +117,45 @@ export function createControls(getAction, runAction) {
     playButton.hidden = started || (!landscape.matches && !canLockOrientation());
   }
 
+  function shotCharge() {
+    if (actionPress?.action !== "shoot") return 0;
+    return Math.min((performance.now() - actionPress.startedAt) / POWER_SHOT_MS, 1);
+  }
+
   function refreshAction() {
     const action = getAction();
-    const label = actionLabels[action] ?? actionLabels.shoot;
-    if (actionButton.textContent !== label) actionButton.textContent = label;
+    if (actionPress && actionPress.action !== action) actionPress = undefined;
+    const ready = shotCharge() === 1;
+    const label = ready ? "Power shot" : actionLabels[action] ?? actionLabels.shoot;
+    if (actionLabel.textContent !== label) actionLabel.textContent = label;
+    const hideHint = action !== "shoot" || ready;
+    if (shotHint.hidden !== hideHint) shotHint.hidden = hideHint;
     const disabled = action === null;
     if (actionButton.disabled !== disabled) actionButton.disabled = disabled;
   }
 
-  function activate(action) {
+  function activate(action, powerShot = false) {
     if (!active() || !action) return;
-    runAction(action);
+    runAction(action, powerShot);
     refreshAction();
+  }
+
+  function pressAction(source) {
+    if (!active() || actionPress) return;
+    const action = getAction();
+    if (action) actionPress = { source, action, startedAt: performance.now() };
+  }
+
+  function releaseAction(source) {
+    if (actionPress?.source !== source) return;
+    const { action } = actionPress;
+    const powerShot = shotCharge() === 1;
+    actionPress = undefined;
+    if (getAction() === action) activate(action, powerShot);
+  }
+
+  function cancelButtonAction() {
+    if (actionPress?.source === "button") actionPress = undefined;
   }
 
   playButton.addEventListener("click", async () => {
@@ -135,10 +208,17 @@ export function createControls(getAction, runAction) {
     });
   }
 
-  bindGameButton(sprintButton, () => {
-    if (active()) setSprint(!sprint);
+  const clearSprintTouch = bindGameButton(sprintButton, {
+    activate: () => {
+      if (active()) setSprint(!sprint);
+    },
   });
-  bindGameButton(actionButton, () => activate(getAction()));
+  const clearActionTouch = bindGameButton(actionButton, {
+    activate: () => activate(getAction()),
+    press: () => pressAction("button"),
+    release: () => releaseAction("button"),
+    cancel: cancelButtonAction,
+  });
 
   window.addEventListener("keydown", (event) => {
     if (!active()) return;
@@ -148,16 +228,24 @@ export function createControls(getAction, runAction) {
       if (key.startsWith("arrow")) event.preventDefault();
       return;
     }
-    if (event.target instanceof HTMLButtonElement && (key === " " || key === "enter")) return;
+    if (
+      event.target instanceof HTMLButtonElement
+      && (key === "enter" || (key === " " && event.target !== actionButton))
+    ) return;
 
     const action = getAction();
     if (key === " " || (key === "enter" && action === "continue")) {
       event.preventDefault();
-      if (!event.repeat && action !== "restart") activate(action);
+      if (event.repeat) return;
+      if (action === "shoot") pressAction("space");
+      else if (action !== "restart") activate(action);
     }
     if (key === "r" && !event.repeat && action === "restart") activate(action);
   });
-  window.addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase()));
+  window.addEventListener("keyup", (event) => {
+    keys.delete(event.key.toLowerCase());
+    if (event.key === " ") releaseAction("space");
+  });
   window.addEventListener("blur", clearInput);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearInput();
@@ -168,6 +256,7 @@ export function createControls(getAction, runAction) {
   return {
     active,
     refreshAction,
+    shotCharge,
     get mobile() {
       return touch.matches;
     },
