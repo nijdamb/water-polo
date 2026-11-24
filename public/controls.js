@@ -52,7 +52,7 @@ function bindGameButton(button, { activate, press, release = activate, cancel })
   return () => { touchId = undefined; };
 }
 
-export function createControls(getAction, runAction) {
+export function createControls(getAction, runAction, onActivityChange) {
   const app = document.getElementById("app");
   const match = document.getElementById("match");
   const start = document.getElementById("mobile-start");
@@ -163,6 +163,7 @@ export function createControls(getAction, runAction) {
     started = true;
     const tryLock = canLockOrientation();
     refreshLayout();
+    onActivityChange();
     try {
       if (tryLock) {
         if (document.fullscreenElement !== app) await app.requestFullscreen();
@@ -177,6 +178,7 @@ export function createControls(getAction, runAction) {
     query.addEventListener("change", () => {
       clearInput();
       refreshLayout();
+      onActivityChange();
     });
   }
 
@@ -249,6 +251,7 @@ export function createControls(getAction, runAction) {
   window.addEventListener("blur", clearInput);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearInput();
+    onActivityChange();
   });
 
   refreshLayout();
