@@ -20,6 +20,12 @@
   const STAM_REGEN = 20;
   const STAM_SPRINT_MIN = 25;
 
+  // A steal needs sustained contact, not a single touch: the tackler must stay
+  // within TACKLE_RADIUS for TACKLE_DURATION seconds. Breaking contact resets
+  // the tackle, so a sprint always leaves room to escape.
+  const TACKLE_RADIUS = PLAYER_R * 2 + 2;
+  const TACKLE_DURATION = 0.9;
+
   const scoreEl = document.getElementById("score");
   const timerEl = document.getElementById("timer");
   const keys = new Set();
@@ -55,6 +61,7 @@
       bannerT: 0,
       pickupCooldown: 0,
       stealCooldown: 0,
+      tackle: null,
     };
     state.ball.carrier = state.players.find(
       (p) => p.team === kickoffTeam && p.kind === "field"
@@ -149,7 +156,7 @@
       // pressure the carrier to steal the ball
       tx = ball.carrier.x;
       ty = ball.carrier.y;
-      wantsSprint = dist(p, ball.carrier) > 90;
+      wantsSprint = dist(p, ball.carrier) > 40; // sprint to keep contact while pressing
     }
     updateStamina(p, wantsSprint, dt);
     moveToward(p, tx, ty, dt, moveScale(p));
@@ -193,12 +200,21 @@
       const enemy = state.players.find(
         (p) => p.kind === "field" && p.team !== ball.carrier.team
       );
-      // steal on contact: separate() keeps field players at PLAYER_R*2 apart,
-      // so the steal radius must be at least that to ever trigger
-      if (enemy && state.stealCooldown <= 0 && dist(enemy, ball.carrier) < PLAYER_R * 2 + 2) {
-        ball.carrier = enemy;
-        enemy.hold = 0;
-        state.stealCooldown = 1.2;
+      const d = enemy ? dist(enemy, ball.carrier) : Infinity;
+      if (enemy && d < TACKLE_RADIUS && state.stealCooldown <= 0) {
+        if (!state.tackle || state.tackle.tackler !== enemy || state.tackle.carrier !== ball.carrier) {
+          state.tackle = { carrier: ball.carrier, tackler: enemy, progress: 0 };
+        }
+        state.tackle.progress += dt;
+        if (state.tackle.progress >= TACKLE_DURATION) {
+          ball.carrier = enemy;
+          enemy.hold = 0;
+          state.stealCooldown = 1.2;
+          state.tackle = null;
+        }
+      } else {
+        // contact broken (or no enemy nearby): the tackle resets
+        state.tackle = null;
       }
       return;
     }
@@ -411,10 +427,27 @@
     }
   }
 
+  function drawTackle() {
+    const t = state.tackle;
+    if (!t || !t.carrier) return;
+    ctx.beginPath();
+    ctx.arc(
+      t.carrier.x,
+      t.carrier.y,
+      PLAYER_R + 7,
+      -Math.PI / 2,
+      -Math.PI / 2 + Math.min(t.progress / TACKLE_DURATION, 1) * Math.PI * 2
+    );
+    ctx.strokeStyle = "#f87171";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+
   function render() {
     drawPool();
     for (const p of state.players) drawPlayer(p);
     drawBall();
+    drawTackle();
     drawOverlay();
   }
 

@@ -17,7 +17,9 @@ Then open http://localhost:8787 — play at `/`, worker info at `/api/info`.
 ## Controls
 
 - Move: WASD or arrow keys
+- Sprint: Shift (drains stamina; the AI follows the same stamina rules)
 - Shoot: Space
+- Steals need ~1s of sustained contact; sprint away to cancel a tackle
 - Restart after full time: R
 
 ## Deploy
